@@ -1,0 +1,65 @@
+[project]
+name = "agenticapi"
+version = "0.1.0"
+description = "Agent-native web framework with harness engineering for Python"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.13"
+dependencies = [
+    "anthropic>=0.89.0",
+    "google-genai>=1.70.0",
+    "httpx>=0.28.1",
+    "openai>=2.30.0",
+    "pydantic>=2.12.5",
+    "starlette>=1.0.0",
+    "structlog>=25.5.0",
+]
+
+[dependency-groups]
+dev = [
+    "isort>=8.0.1",
+    "mypy>=1.20.0",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-benchmark>=5.2.3",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.9",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[project.scripts]
+agenticapi = "agenticapi.cli.main:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agenticapi"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "TCH", "RUF"]
+ignore = ["N818"]  # Exception names like PolicyViolation are intentional per spec
+
+[tool.ruff.lint.isort]
+known-first-party = ["agenticapi"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "requires_llm: Tests requiring LLM API key",
+    "requires_db: Tests requiring database connection",
+    "slow: Tests taking more than 10 seconds",
+    "benchmark: Benchmark tests",
+]
