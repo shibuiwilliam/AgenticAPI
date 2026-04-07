@@ -82,8 +82,8 @@ pip install agenticapi
 Or install from source:
 
 ```bash
-git clone https://github.com/your-org/agenticapi.git
-cd agenticapi
+git clone https://github.com/shibuiwilliam/AgenticAPI.git
+cd AgenticAPI
 pip install -e ".[dev]"
 ```
 
