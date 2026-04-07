@@ -17,7 +17,7 @@ Or test programmatically:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agenticapi.app import AgenticApp
 from agenticapi.harness.approval.rules import ApprovalRule
@@ -26,12 +26,13 @@ from agenticapi.harness.engine import HarnessEngine
 from agenticapi.harness.policy.code_policy import CodePolicy
 from agenticapi.harness.policy.data_policy import DataPolicy
 from agenticapi.interface.intent import Intent, IntentScope
-from agenticapi.interface.response import AgentResponse
 from agenticapi.routing import AgentRouter
-from agenticapi.runtime.context import AgentContext
-from agenticapi.runtime.tools.database import DatabaseTool
 from agenticapi.runtime.tools.cache import CacheTool
+from agenticapi.runtime.tools.database import DatabaseTool
 from agenticapi.runtime.tools.registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from agenticapi.runtime.context import AgentContext
 
 # --- Mock data ---
 

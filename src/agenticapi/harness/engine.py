@@ -135,6 +135,7 @@ class HarnessEngine:
         endpoint_name: str = "",
         context: AgentContext | None = None,
         tools: ToolRegistry | None = None,
+        sandbox_data: dict[str, object] | None = None,
     ) -> ExecutionResult:
         """Execute generated code through the full harness pipeline.
 
@@ -249,16 +250,17 @@ class HarnessEngine:
                         trace.approval_request_id = exc.request_id
                         raise
 
-            # Step 4: Sandbox execution
+            # Step 4: Sandbox execution (with pre-fetched data injected)
             sandbox_result: SandboxResult | None = None
             async with self._sandbox as sandbox:
                 sandbox_result = await sandbox.execute(
                     code=generated_code,
                     tools=tools,
                     resource_limits=ResourceLimits(),
+                    sandbox_data=sandbox_data,
                 )
 
-            # Step 5: Post-execution monitors
+            # Step 6: Post-execution monitors
             for monitor in self._monitors:
                 monitor_result = await monitor.on_execution_complete(
                     sandbox_result,
@@ -268,7 +270,7 @@ class HarnessEngine:
                     violation_msg = "; ".join(monitor_result.violations)
                     raise SandboxViolation(f"Monitor violation: {violation_msg}")
 
-            # Step 6: Post-execution validators
+            # Step 7: Post-execution validators
             for validator in self._validators:
                 validation = await validator.validate(
                     sandbox_result,

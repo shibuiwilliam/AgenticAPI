@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from agenticapi.routing import AgentRouter
     from agenticapi.runtime.code_generator import CodeGenerator
     from agenticapi.runtime.llm.base import LLMBackend
+    from agenticapi.runtime.tools.registry import ToolRegistry
 
 logger = structlog.get_logger(__name__)
 
@@ -68,6 +69,7 @@ class AgenticApp:
         version: str = "0.1.0",
         harness: HarnessEngine | None = None,
         llm: LLMBackend | None = None,
+        tools: ToolRegistry | None = None,
     ) -> None:
         """Initialize the application.
 
@@ -76,18 +78,21 @@ class AgenticApp:
             version: Application version string.
             harness: Optional HarnessEngine for policy evaluation and sandbox execution.
             llm: Optional LLM backend for intent parsing and code generation.
+            tools: Optional ToolRegistry defining tools available to generated code.
         """
         self.title = title
         self.version = version
         self._endpoints: dict[str, AgentEndpointDef] = {}
         self._harness = harness
         self._llm = llm
+        self._tools = tools
         self._ops_agents: list[OpsAgent] = []
         self._starlette_app: Starlette | None = None
         self._session_manager = SessionManager()
         self._intent_parser = IntentParser(llm=llm)
         self._response_formatter = ResponseFormatter()
         self._code_generator: CodeGenerator | None = None
+        self._extra_routes: list[Route] = []
 
     @property
     def harness(self) -> HarnessEngine | None:
@@ -175,6 +180,15 @@ class AgenticApp:
             agent: An OpsAgent instance to register.
         """
         self._ops_agents.append(agent)
+
+    def add_routes(self, routes: list[Route]) -> None:
+        """Add extra Starlette routes (e.g. REST compat routes).
+
+        Args:
+            routes: List of Starlette Route objects to include.
+        """
+        self._extra_routes.extend(routes)
+        self._starlette_app = None  # Force rebuild
 
     async def process_intent(
         self,
@@ -283,17 +297,29 @@ class AgenticApp:
         if self._code_generator is None:
             from agenticapi.runtime.code_generator import CodeGenerator
 
-            self._code_generator = CodeGenerator(llm=self._llm)  # type: ignore[arg-type]
+            self._code_generator = CodeGenerator(llm=self._llm, tools=self._tools)  # type: ignore[arg-type]
 
         assert self._harness is not None
 
-        # Generate code
+        # Pre-fetch data from tools (shared between code gen prompt and sandbox)
+        sandbox_data: dict[str, object] = {}
+        if self._tools is not None:
+            for tool_def in self._tools.get_definitions():
+                tool = self._tools.get(tool_def.name)
+                try:
+                    tool_result = await tool.invoke(query=f"SELECT * FROM {tool_def.name}")
+                    sandbox_data[tool_def.name] = tool_result
+                except Exception:
+                    sandbox_data[tool_def.name] = []
+
+        # Generate code (with data sample in prompt so LLM knows the schema)
         generated = await self._code_generator.generate(
             intent_raw=intent.raw,
             intent_action=intent.action.value,
             intent_domain=intent.domain,
             intent_parameters=intent.parameters,
             context=context,
+            sandbox_data=sandbox_data if sandbox_data else None,
         )
 
         # Execute through harness
@@ -305,6 +331,7 @@ class AgenticApp:
             reasoning=generated.reasoning,
             endpoint_name=endpoint_def.name,
             context=context,
+            sandbox_data=sandbox_data if sandbox_data else None,
         )
 
         return AgentResponse(
@@ -395,6 +422,7 @@ class AgenticApp:
             handler = self._create_endpoint_handler(name, endpoint_def)
             routes.append(Route(f"/agent/{name}", handler, methods=["POST"]))
 
+        routes.extend(self._extra_routes)
         routes.append(Route("/health", self._health_handler, methods=["GET"]))
 
         @asynccontextmanager

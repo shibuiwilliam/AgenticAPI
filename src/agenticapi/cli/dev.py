@@ -26,7 +26,17 @@ def run_dev_server(
         port: Bind port number.
         reload: Whether to enable auto-reload on file changes.
     """
+    import os
+    import sys
+
     import uvicorn
+
+    # Ensure CWD is on sys.path so that local modules (e.g.
+    # examples.01_hello_agent.app) can be imported by uvicorn's
+    # reloader subprocess.
+    cwd = os.getcwd()
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
 
     logger.info(
         "dev_server_starting",

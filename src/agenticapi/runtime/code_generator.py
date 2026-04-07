@@ -85,6 +85,7 @@ class CodeGenerator:
         intent_domain: str,
         intent_parameters: dict[str, Any],
         context: AgentContext,
+        sandbox_data: dict[str, object] | None = None,
     ) -> GeneratedCode:
         """Generate Python code from an intent.
 
@@ -97,6 +98,8 @@ class CodeGenerator:
             intent_domain: The domain of the request.
             intent_parameters: Extracted parameters from the intent.
             context: The agent execution context.
+            sandbox_data: Pre-fetched tool data to include in the prompt
+                so the LLM knows the data schema.
 
         Returns:
             GeneratedCode containing the extracted code and metadata.
@@ -114,6 +117,7 @@ class CodeGenerator:
             intent_parameters=intent_parameters,
             tool_definitions=tool_definitions,
             context=context_str,
+            sandbox_data=sandbox_data,
         )
 
         logger.info(

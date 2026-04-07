@@ -155,7 +155,7 @@ class OpenAIBackend:
 
         kwargs: dict[str, Any] = {
             "model": self._model,
-            "max_tokens": prompt.max_tokens or self._max_tokens,
+            "max_completion_tokens": prompt.max_tokens or self._max_tokens,
             "messages": messages,
             "temperature": prompt.temperature,
         }

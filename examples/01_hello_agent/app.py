@@ -14,8 +14,12 @@ Test with curl:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from agenticapi import AgenticApp, AgentResponse, Intent
-from agenticapi.runtime.context import AgentContext
+
+if TYPE_CHECKING:
+    from agenticapi.runtime.context import AgentContext
 
 app = AgenticApp(title="Hello Agent")
 

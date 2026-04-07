@@ -40,7 +40,12 @@ _result = {{"output": None, "return_value": None, "error": None}}
 
 try:
     _code = base64.b64decode("{code_b64}").decode("utf-8")
-    _namespace = {{}}
+    # Pre-populate namespace with common names and injected data.
+    _data_json = base64.b64decode("{data_b64}").decode("utf-8")
+    _namespace = {{
+        "Any": object, "Optional": None, "Dict": dict, "List": list,
+        "data": json.loads(_data_json),
+    }}
     exec(_code, _namespace)
 
     # Try to capture a 'result' variable if defined
@@ -96,6 +101,7 @@ class ProcessSandbox(SandboxRuntime):
         code: str,
         tools: Any = None,
         resource_limits: ResourceLimits | None = None,
+        sandbox_data: dict[str, Any] | None = None,
     ) -> SandboxResult:
         """Execute code in an isolated subprocess.
 
@@ -104,6 +110,8 @@ class ProcessSandbox(SandboxRuntime):
             tools: ToolRegistry (currently unused in Phase 1).
             resource_limits: Resource limits to enforce. Falls back to
                 default limits if not provided.
+            sandbox_data: Optional dict of pre-fetched data to inject into
+                the execution namespace as the ``data`` variable.
 
         Returns:
             SandboxResult with captured output and metrics.
@@ -115,9 +123,11 @@ class ProcessSandbox(SandboxRuntime):
         limits = resource_limits or self._default_limits
         timeout = limits.max_execution_time_seconds
 
-        # Build the wrapper script (base64-encode user code for safe transport)
+        # Build the wrapper script (base64-encode user code and data for safe transport)
         code_b64 = base64.b64encode(code.encode("utf-8")).decode("ascii")
-        wrapper_code = _WRAPPER_TEMPLATE.format(code_b64=code_b64)
+        data_json = json.dumps(sandbox_data or {}, default=str)
+        data_b64 = base64.b64encode(data_json.encode("utf-8")).decode("ascii")
+        wrapper_code = _WRAPPER_TEMPLATE.format(code_b64=code_b64, data_b64=data_b64)
 
         # Write to a temporary file and execute
         start_time = time.monotonic()

@@ -76,12 +76,6 @@ If you know FastAPI, you already know the patterns:
 Requires **Python 3.13+**.
 
 ```bash
-pip install agenticapi
-```
-
-Or install from source:
-
-```bash
 git clone https://github.com/shibuiwilliam/AgenticAPI.git
 cd AgenticAPI
 pip install -e ".[dev]"
@@ -595,8 +589,8 @@ assert_code_safe("import os")  # Raises AssertionError
 ### Setup
 
 ```bash
-git clone https://github.com/your-org/agenticapi.git
-cd agenticapi
+git clone https://github.com/shibuiwilliam/AgenticAPI.git
+cd AgenticAPI
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
@@ -683,9 +677,103 @@ src/agenticapi/
     testing/                # mock_llm, MockSandbox, assertions, fixtures, benchmarks
     cli/                    # Dev server, interactive console, version
 examples/
-    01_hello_agent/         # Minimal single-endpoint example
-    02_ecommerce/           # Multi-endpoint app with policies, tools, and approval
+    01_hello_agent/         # Minimal single-endpoint example (no LLM)
+    02_ecommerce/           # Multi-endpoint with policies, tools, and approval
+    03_openai_agent/        # OpenAI GPT — task tracker with harness safety
+    04_anthropic_agent/     # Anthropic Claude — product catalogue agent
+    05_gemini_agent/        # Google Gemini — support ticket agent
 ```
+
+## Examples
+
+Five example apps are included under `examples/`. Each demonstrates different features and LLM backends.
+
+### 01 — Hello Agent (no LLM)
+
+The simplest possible agent. No API key needed — the handler returns a response directly.
+
+```bash
+agenticapi dev --app examples.01_hello_agent.app:app
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/agent/greeter \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Hello, how are you?"}'
+```
+
+### 02 — Ecommerce (no LLM)
+
+Multi-endpoint app with `AgentRouter`, `CodePolicy`, `DataPolicy`, `ApprovalWorkflow`, `DatabaseTool`, and `CacheTool`. No API key needed — handlers process intents directly.
+
+```bash
+agenticapi dev --app examples.02_ecommerce.app:app
+```
+
+```bash
+# Query orders
+curl -X POST http://127.0.0.1:8000/agent/orders.query \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Show recent orders"}'
+
+# Product analytics
+curl -X POST http://127.0.0.1:8000/agent/products.analytics \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Which products are low in stock?"}'
+```
+
+### 03 — OpenAI Agent (requires `OPENAI_API_KEY`)
+
+Task tracker powered by OpenAI GPT with full harness safety pipeline: code generation, policy evaluation, static analysis, sandbox execution, and audit recording.
+
+```bash
+export OPENAI_API_KEY="sk-..."
+agenticapi dev --app examples.03_openai_agent.app:app
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/agent/tasks.query \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Show me all high-priority tasks"}'
+```
+
+### 04 — Anthropic Agent (requires `ANTHROPIC_API_KEY`)
+
+Product catalogue agent powered by Anthropic Claude with `CodePolicy`, `DataPolicy`, `ResourcePolicy`, and `DatabaseTool`.
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+agenticapi dev --app examples.04_anthropic_agent.app:app
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/agent/products.search \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Show me all electronics under 50000 yen"}'
+```
+
+### 05 — Gemini Agent (requires `GOOGLE_API_KEY`)
+
+Support ticket agent powered by Google Gemini with session support for multi-turn conversations.
+
+```bash
+export GOOGLE_API_KEY="AIza..."
+agenticapi dev --app examples.05_gemini_agent.app:app
+```
+
+```bash
+# Search tickets
+curl -X POST http://127.0.0.1:8000/agent/tickets.search \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Show me all open critical tickets"}'
+
+# Support metrics
+curl -X POST http://127.0.0.1:8000/agent/tickets.metrics \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "What is the average resolution time?"}'
+```
+
+All examples also expose a health check at `GET /health`.
 
 ## Requirements
 
@@ -700,4 +788,4 @@ examples/
 
 ## License
 
-Apache-2.0
+[MIT](./LICENSE)

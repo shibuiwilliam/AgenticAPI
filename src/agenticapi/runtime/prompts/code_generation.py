@@ -22,6 +22,7 @@ def build_code_generation_prompt(
     intent_parameters: dict[str, Any],
     tool_definitions: list[ToolDefinition],
     context: str,
+    sandbox_data: dict[str, object] | None = None,
 ) -> LLMPrompt:
     """Build an LLM prompt for code generation.
 
@@ -35,11 +36,14 @@ def build_code_generation_prompt(
         intent_parameters: Extracted parameters from the intent.
         tool_definitions: Available tools the generated code may use.
         context: Pre-assembled context string from the context window.
+        sandbox_data: Optional dict of pre-fetched data that will be
+            available as the ``data`` variable. A sample is included
+            in the prompt so the LLM knows the schema.
 
     Returns:
         An LLMPrompt ready to send to an LLM backend.
     """
-    system = _build_system_prompt(tool_definitions)
+    system = _build_system_prompt(tool_definitions, sandbox_data)
     user = _build_user_prompt(intent_raw, intent_action, intent_domain, intent_parameters, context)
     return LLMPrompt(
         system=system,
@@ -48,47 +52,57 @@ def build_code_generation_prompt(
     )
 
 
-def _build_system_prompt(tool_definitions: list[ToolDefinition]) -> str:
+def _build_system_prompt(
+    tool_definitions: list[ToolDefinition],
+    sandbox_data: dict[str, object] | None = None,
+) -> str:
     """Build the system prompt for code generation.
 
     Args:
         tool_definitions: Available tools the generated code may use.
+        sandbox_data: Pre-fetched data to show sample rows.
 
     Returns:
         The system prompt string.
     """
     tool_descriptions = _format_tool_definitions(tool_definitions)
+    data_sample = _format_data_sample(sandbox_data) if sandbox_data else ""
 
     return f"""\
 You are a code generation agent for AgenticAPI. Your task is to generate safe, \
-correct Python code that fulfills the user's intent using ONLY the provided tools.
+correct Python code that fulfills the user's intent.
 
 ## Rules
 
 1. Generate ONLY Python code. No explanations outside of code comments.
-2. Use ONLY the tools listed below. Do NOT import any modules.
+2. Do NOT import any modules. The sandbox has no imports available except builtins.
 3. Do NOT use `eval`, `exec`, `__import__`, `compile`, `getattr` with computed names, \
 or any other dynamic code execution.
 4. Do NOT access the filesystem, network, or environment variables.
 5. Do NOT use infinite loops. All loops must have a clear termination condition.
-6. The generated code must be a single async function named `execute` that accepts \
-a `tools` parameter (a dictionary mapping tool names to async callables).
-7. Return the result from the `execute` function.
+6. Do NOT use type annotations like `Any`, `dict[str, ...]`, etc. — typing modules are not available.
+7. Assign your final answer to a variable named `result`. \
+The value must be JSON-serializable (dict, list, str, int, float, bool, or None).
 8. Handle errors gracefully with try/except blocks.
 9. Keep the code minimal and focused on the task.
+10. A variable named `data` is pre-populated in the execution environment. \
+It is a dict where each key is a tool name and each value is a **Python list of dicts** (rows). \
+Use `data["<tool_name>"]` to get the list. Filter with list comprehensions. \
+Do NOT use SQL queries, do NOT call tools, do NOT subscript with query strings.
 
-## Available Tools
+## Available Data Sources
 
 {tool_descriptions}
+{data_sample}
 
 ## Output Format
 
-Wrap your code in a ```python code block. The code must define:
+Wrap your code in a ```python code block. Example:
 
 ```python
-async def execute(tools: dict) -> Any:
-    # Your implementation here
-    ...
+rows = data["my_tool"]
+filtered = [r for r in rows if r["status"] == "active"]
+result = {{"items": filtered, "count": len(filtered)}}
 ```"""
 
 
@@ -132,6 +146,37 @@ def _build_user_prompt(
     parts.append("Generate the Python code to fulfill this intent.")
 
     return "\n\n".join(parts)
+
+
+def _format_data_sample(sandbox_data: dict[str, object]) -> str:
+    """Format a sample of pre-fetched data for inclusion in the prompt.
+
+    Shows the first 2 rows of each data source so the LLM knows the
+    column names and data types.
+
+    Args:
+        sandbox_data: Dict mapping tool names to their data (list of dicts).
+
+    Returns:
+        Formatted string showing sample data.
+    """
+    if not sandbox_data:
+        return ""
+
+    import json
+
+    sections: list[str] = ["\n## Sample Data (first 2 rows per source)"]
+    for name, rows in sandbox_data.items():
+        if isinstance(rows, list) and rows:
+            sample = rows[:2]
+            sections.append(f'`data["{name}"]` — {len(rows)} rows total:')
+            sections.append("```json")
+            sections.append(json.dumps(sample, indent=2, default=str))
+            sections.append("```")
+        else:
+            sections.append(f'`data["{name}"]` — empty (0 rows)')
+
+    return "\n".join(sections)
 
 
 def _format_tool_definitions(tool_definitions: list[ToolDefinition]) -> str:
