@@ -23,9 +23,13 @@ uvicorn examples.01_hello_agent.app:app --reload
 ```
 
 ```bash
+# Send an intent
 curl -X POST http://127.0.0.1:8000/agent/greeter \
     -H "Content-Type: application/json" \
     -d '{"intent": "Hello, how are you?"}'
+
+# Interactive API docs (auto-generated)
+open http://127.0.0.1:8000/docs
 ```
 
 ## Key Features
@@ -34,14 +38,17 @@ curl -X POST http://127.0.0.1:8000/agent/greeter \
 - **Dynamic code generation** — LLM backends generate Python code on the fly based on user intent, available tools, and execution context.
 - **Harness engineering** — A layered safety system that evaluates generated code against policies, runs static AST analysis, executes in a process sandbox, and records full audit traces — all before a single line of generated code touches your data.
 - **Multi-LLM support** — Pluggable backends for Anthropic Claude, OpenAI GPT, and Google Gemini. Swap providers with a single config change, or bring your own via the `LLMBackend` protocol.
+- **OpenAPI and Swagger UI** — Auto-generated OpenAPI 3.1.0 schema at `/openapi.json`, Swagger UI at `/docs`, and ReDoc at `/redoc` — just like FastAPI.
 - **Approval workflows** — Declarative rules that require human approval for sensitive operations, with configurable approvers, timeouts, and notification channels.
 - **Built-in tools** — Database, cache, HTTP client, and queue tools that agents can use in generated code, each with its own access controls.
 - **Dynamic pipelines** — Middleware-like processing stages that agents can compose at runtime based on request content.
 - **Agent-to-Agent protocol** — Foundation for inter-agent communication with capability discovery, negotiation, and trust scoring.
+- **Ops agents** — Register autonomous operational agents for monitoring, healing, and performance tuning, with severity-based autonomy gating.
 - **ASGI-native** — Built on Starlette. Runs on uvicorn, Daphne, Hypercorn, or any ASGI server. Follows patterns familiar to FastAPI developers.
 - **Session management** — Multi-turn conversation support with context accumulation and TTL-based expiration.
-- **Full observability** — Structured logging via structlog, execution traces, and audit records for every agent operation.
+- **Full observability** — Structured logging via structlog, execution traces, audit records, and console/OpenTelemetry exporters for every agent operation.
 - **REST compatibility** — Mount existing FastAPI apps inside AgenticAPI, or expose agent endpoints as conventional REST routes.
+- **Capability discovery** — Built-in `GET /capabilities` endpoint exposes structured metadata about all registered endpoints for external agent integration.
 
 ## Architecture
 
@@ -69,7 +76,9 @@ If you know FastAPI, you already know the patterns:
 | `Response` | `AgentResponse` | Output with result, reasoning, trace |
 | `Depends()` | `HarnessDepends()` | Dependency injection |
 | Middleware | `DynamicPipeline` | Dynamic middleware composition |
-| `BackgroundTasks` | `AgentTasks` | Background processing by agents |
+| `/docs` | `/docs` | Swagger UI (auto-generated) |
+| `/redoc` | `/redoc` | ReDoc UI (auto-generated) |
+| `/openapi.json` | `/openapi.json` | OpenAPI 3.1.0 schema |
 
 ## Installation
 
@@ -112,6 +121,8 @@ curl -X POST http://127.0.0.1:8000/agent/orders \
     -d '{"intent": "How many orders do we have?"}'
 ```
 
+Browse the auto-generated docs at `http://127.0.0.1:8000/docs`.
+
 ### 2. With LLM code generation and harness
 
 When you provide an LLM backend and harness engine, AgenticAPI generates code dynamically and executes it safely:
@@ -122,6 +133,7 @@ from agenticapi.runtime.llm import AnthropicBackend
 
 app = AgenticApp(
     title="Harnessed Agent",
+    description="Agent API with safety guardrails",
     llm=AnthropicBackend(model="claude-sonnet-4-6"),
     harness=HarnessEngine(),
 )
@@ -181,8 +193,6 @@ app.include_router(orders_router)
 app.include_router(products_router)
 ```
 
-See `examples/02_ecommerce/app.py` for a complete multi-endpoint example with policies, tools, and approval workflows.
-
 ### 5. Programmatic usage
 
 You can call the agent pipeline directly without HTTP:
@@ -198,6 +208,33 @@ print(response.generated_code)
 print(response.reasoning)
 ```
 
+## OpenAPI and Interactive Docs
+
+Every AgenticAPI app automatically serves OpenAPI documentation — no configuration needed:
+
+| Route | What it serves |
+|---|---|
+| `GET /openapi.json` | OpenAPI 3.1.0 JSON schema |
+| `GET /docs` | Swagger UI (interactive) |
+| `GET /redoc` | ReDoc UI |
+
+The schema includes every registered agent endpoint as a `POST /agent/{name}` operation, with request/response schemas, intent scope metadata, policy names, and autonomy levels.
+
+```python
+# Customize or disable docs
+app = AgenticApp(
+    title="My API",
+    version="2.0.0",
+    description="My agent-powered service",
+    docs_url="/api/docs",          # Custom Swagger UI path
+    redoc_url="/api/redoc",        # Custom ReDoc path
+    openapi_url="/api/schema.json", # Custom schema path
+)
+
+# Disable docs entirely
+app = AgenticApp(openapi_url=None)
+```
+
 ## Safety: The Harness System
 
 AgenticAPI's harness system provides multi-layered defense for agent-generated code. Every piece of code an LLM generates passes through this pipeline before execution.
@@ -207,8 +244,7 @@ AgenticAPI's harness system provides multi-layered defense for agent-generated c
 Four built-in policy types control what generated code is allowed to do:
 
 ```python
-from agenticapi import CodePolicy, DataPolicy, ResourcePolicy
-from agenticapi.harness.policy.runtime_policy import RuntimePolicy
+from agenticapi import CodePolicy, DataPolicy, ResourcePolicy, RuntimePolicy
 
 # Code safety — control imports, builtins, and patterns
 code_policy = CodePolicy(
@@ -257,8 +293,7 @@ Before execution, generated code is parsed into an AST and checked for:
 Sensitive operations can require human approval before execution:
 
 ```python
-from agenticapi.harness.approval.rules import ApprovalRule
-from agenticapi.harness.approval.workflow import ApprovalWorkflow
+from agenticapi import ApprovalRule, ApprovalWorkflow, HarnessEngine
 
 workflow = ApprovalWorkflow(
     rules=[
@@ -290,6 +325,8 @@ Code runs in an isolated subprocess with:
 - Execution timeout enforcement
 - stdout/stderr capture
 - Resource metrics collection (CPU time, memory, wall-clock time)
+- Post-execution monitors (`ResourceMonitor`, `OutputSizeMonitor`)
+- Post-execution validators (`OutputTypeValidator`, `ReadOnlyValidator`)
 
 ### Audit Trail
 
@@ -342,7 +379,7 @@ from agenticapi import IntentScope
 @app.agent_endpoint(
     name="orders",
     intent_scope=IntentScope(
-        allowed_intents=["order.*"],        # Allow all order intents
+        allowed_intents=["order.*"],         # Allow all order intents
         denied_intents=["order.bulk_delete"], # But not bulk deletes
     ),
 )
@@ -504,6 +541,8 @@ scorer.can_read("agent-123")        # True
 scorer.can_write("agent-123")       # Depends on accumulated trust
 ```
 
+Every app also exposes `GET /capabilities` for external agent discovery, returning structured metadata about all registered endpoints.
+
 ## Ops Agents
 
 Register operational agents for autonomous system management:
@@ -515,7 +554,6 @@ from agenticapi.types import AutonomyLevel, Severity
 class LogAnalyst(OpsAgent):
     async def start(self) -> None:
         self._running = True
-        # Start monitoring log streams...
 
     async def stop(self) -> None:
         self._running = False
@@ -535,6 +573,8 @@ agent.can_handle_autonomously(Severity.LOW)       # True
 agent.can_handle_autonomously(Severity.CRITICAL)   # False — needs human
 ```
 
+Ops agents participate in the app lifecycle (started on startup, stopped on shutdown) and their health is reported in the `GET /health` response.
+
 ## REST Compatibility
 
 Mount existing FastAPI apps or expose agent endpoints as REST:
@@ -545,7 +585,7 @@ from agenticapi.interface.compat import mount_fastapi, mount_in_agenticapi, expo
 # Mount AgenticAPI inside an existing FastAPI app
 from fastapi import FastAPI
 fastapi_app = FastAPI()
-mount_fastapi(fastapi_app, agenticapi_app, path="/agent")
+mount_fastapi(agenticapi_app, fastapi_app, path="/agent")
 
 # Or mount FastAPI inside AgenticAPI
 mount_in_agenticapi(agenticapi_app, fastapi_app, path="/api/v1")
@@ -584,6 +624,10 @@ assert_code_safe("x = 1 + 2")  # Passes
 assert_code_safe("import os")  # Raises AssertionError
 ```
 
+## Examples
+
+Seven example apps are included, from a minimal hello-world to a full-stack multi-feature composition. See the [examples README](./examples/README.md) for details, curl commands, and per-endpoint documentation.
+
 ## Development
 
 ### Setup
@@ -598,11 +642,11 @@ pip install -e ".[dev]"
 ### Running Tests
 
 ```bash
-# All tests (503 tests)
-pytest
+# All tests (564 tests)
+make test
 
-# With coverage (89%+)
-pytest --cov=src/agenticapi --cov-report=term-missing
+# With coverage (88%+)
+make test-cov
 
 # Specific module
 pytest tests/unit/runtime/test_llm_backend.py -xvs
@@ -611,35 +655,37 @@ pytest tests/unit/runtime/test_llm_backend.py -xvs
 pytest -m "not requires_llm"
 
 # Benchmarks
-pytest tests/benchmarks/ --benchmark-only
+make test-benchmark
 ```
 
 ### Code Quality
 
 ```bash
-# Format
-ruff format src/ tests/
+# Format + lint + typecheck in one command
+make check
 
-# Lint (with auto-fix)
-ruff check --fix src/ tests/
+# Auto-fix formatting and lint issues
+make fix
 
-# Type check
-mypy src/agenticapi/
-
-# All checks at once
-ruff format --check src/ tests/ && ruff check src/ tests/ && mypy src/agenticapi/ && pytest
+# Or individually
+make format      # ruff format
+make lint        # ruff check
+make typecheck   # mypy
 ```
 
 ### Dev Server
 
 ```bash
-agenticapi dev --app examples.01_hello_agent.app:app
+make dev              # Hello agent example
+make dev-ecommerce    # Ecommerce example
+make dev-openai       # OpenAI example (requires OPENAI_API_KEY)
 ```
 
-### Interactive Console
+### Full CI Pipeline
 
 ```bash
-agenticapi console --app examples.02_ecommerce.app:app
+make ci       # lint + typecheck + test
+make ci-cov   # lint + typecheck + test with coverage
 ```
 
 ## Project Structure
@@ -647,6 +693,7 @@ agenticapi console --app examples.02_ecommerce.app:app
 ```
 src/agenticapi/
     app.py                  # AgenticApp — main ASGI application
+    openapi.py              # OpenAPI schema generation, Swagger UI, ReDoc
     routing.py              # AgentRouter — endpoint grouping
     types.py                # Shared types (AutonomyLevel, Severity, TraceLevel)
     exceptions.py           # Exception hierarchy with HTTP status mapping
@@ -682,98 +729,9 @@ examples/
     03_openai_agent/        # OpenAI GPT — task tracker with harness safety
     04_anthropic_agent/     # Anthropic Claude — product catalogue agent
     05_gemini_agent/        # Google Gemini — support ticket agent
+    06_full_stack/          # All features: pipeline, ops, A2A, REST compat, monitors
+    07_comprehensive/       # Multi-feature composition per endpoint (DevOps domain)
 ```
-
-## Examples
-
-Five example apps are included under `examples/`. Each demonstrates different features and LLM backends.
-
-### 01 — Hello Agent (no LLM)
-
-The simplest possible agent. No API key needed — the handler returns a response directly.
-
-```bash
-agenticapi dev --app examples.01_hello_agent.app:app
-```
-
-```bash
-curl -X POST http://127.0.0.1:8000/agent/greeter \
-    -H "Content-Type: application/json" \
-    -d '{"intent": "Hello, how are you?"}'
-```
-
-### 02 — Ecommerce (no LLM)
-
-Multi-endpoint app with `AgentRouter`, `CodePolicy`, `DataPolicy`, `ApprovalWorkflow`, `DatabaseTool`, and `CacheTool`. No API key needed — handlers process intents directly.
-
-```bash
-agenticapi dev --app examples.02_ecommerce.app:app
-```
-
-```bash
-# Query orders
-curl -X POST http://127.0.0.1:8000/agent/orders.query \
-    -H "Content-Type: application/json" \
-    -d '{"intent": "Show recent orders"}'
-
-# Product analytics
-curl -X POST http://127.0.0.1:8000/agent/products.analytics \
-    -H "Content-Type: application/json" \
-    -d '{"intent": "Which products are low in stock?"}'
-```
-
-### 03 — OpenAI Agent (requires `OPENAI_API_KEY`)
-
-Task tracker powered by OpenAI GPT with full harness safety pipeline: code generation, policy evaluation, static analysis, sandbox execution, and audit recording.
-
-```bash
-export OPENAI_API_KEY="sk-..."
-agenticapi dev --app examples.03_openai_agent.app:app
-```
-
-```bash
-curl -X POST http://127.0.0.1:8000/agent/tasks.query \
-    -H "Content-Type: application/json" \
-    -d '{"intent": "Show me all high-priority tasks"}'
-```
-
-### 04 — Anthropic Agent (requires `ANTHROPIC_API_KEY`)
-
-Product catalogue agent powered by Anthropic Claude with `CodePolicy`, `DataPolicy`, `ResourcePolicy`, and `DatabaseTool`.
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-agenticapi dev --app examples.04_anthropic_agent.app:app
-```
-
-```bash
-curl -X POST http://127.0.0.1:8000/agent/products.search \
-    -H "Content-Type: application/json" \
-    -d '{"intent": "Show me all electronics under 50000 yen"}'
-```
-
-### 05 — Gemini Agent (requires `GOOGLE_API_KEY`)
-
-Support ticket agent powered by Google Gemini with session support for multi-turn conversations.
-
-```bash
-export GOOGLE_API_KEY="AIza..."
-agenticapi dev --app examples.05_gemini_agent.app:app
-```
-
-```bash
-# Search tickets
-curl -X POST http://127.0.0.1:8000/agent/tickets.search \
-    -H "Content-Type: application/json" \
-    -d '{"intent": "Show me all open critical tickets"}'
-
-# Support metrics
-curl -X POST http://127.0.0.1:8000/agent/tickets.metrics \
-    -H "Content-Type: application/json" \
-    -d '{"intent": "What is the average resolution time?"}'
-```
-
-All examples also expose a health check at `GET /health`.
 
 ## Requirements
 

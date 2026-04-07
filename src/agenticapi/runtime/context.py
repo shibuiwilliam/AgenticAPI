@@ -122,3 +122,17 @@ class AgentContext:
     user_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     context_window: ContextWindow = field(default_factory=ContextWindow)
+
+    def add_context(self, key: str, value: str, *, source: str = "agent", priority: int = 0) -> None:
+        """Add a context item for use in future LLM prompts.
+
+        Allows agents to store learned information back into the context
+        window for multi-turn conversations.
+
+        Args:
+            key: Unique identifier for this context item.
+            value: The context content.
+            source: Origin of this context (e.g., "agent", "tool", "user").
+            priority: Higher priority items are included first in prompts.
+        """
+        self.context_window.add(ContextItem(key=key, value=value, source=source, priority=priority))

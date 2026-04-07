@@ -127,6 +127,35 @@ class TestHealthEndpoint:
         assert "endpoints" in data
 
 
+class TestCapabilitiesEndpoint:
+    async def test_capabilities_returns_endpoint_metadata(self) -> None:
+        from agenticapi.interface.intent import IntentScope
+
+        app = AgenticApp(title="TestApp", version="1.0.0")
+
+        @app.agent_endpoint(
+            name="orders",
+            description="Query orders",
+            autonomy_level="auto",
+            intent_scope=IntentScope(allowed_intents=["order.*"]),
+        )
+        async def handler(intent: Intent, context: AgentContext) -> None:
+            pass
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get("/capabilities")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["title"] == "TestApp"
+        assert len(data["endpoints"]) == 1
+        ep = data["endpoints"][0]
+        assert ep["name"] == "orders"
+        assert ep["description"] == "Query orders"
+        assert ep["autonomy_level"] == "auto"
+        assert "order.*" in ep["intent_scope"]["allowed_intents"]
+
+
 class TestAgentEndpointHTTP:
     async def test_post_valid_intent(self) -> None:
         app = AgenticApp()

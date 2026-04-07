@@ -67,21 +67,30 @@ class AgenticApp:
         *,
         title: str = "AgenticAPI",
         version: str = "0.1.0",
+        description: str = "",
         harness: HarnessEngine | None = None,
         llm: LLMBackend | None = None,
         tools: ToolRegistry | None = None,
+        docs_url: str | None = "/docs",
+        redoc_url: str | None = "/redoc",
+        openapi_url: str | None = "/openapi.json",
     ) -> None:
         """Initialize the application.
 
         Args:
             title: Application title for documentation.
             version: Application version string.
+            description: Optional description shown in OpenAPI docs.
             harness: Optional HarnessEngine for policy evaluation and sandbox execution.
             llm: Optional LLM backend for intent parsing and code generation.
             tools: Optional ToolRegistry defining tools available to generated code.
+            docs_url: URL path for Swagger UI. Set to None to disable.
+            redoc_url: URL path for ReDoc UI. Set to None to disable.
+            openapi_url: URL path for OpenAPI JSON schema. Set to None to disable all docs.
         """
         self.title = title
         self.version = version
+        self.description = description
         self._endpoints: dict[str, AgentEndpointDef] = {}
         self._harness = harness
         self._llm = llm
@@ -93,6 +102,9 @@ class AgenticApp:
         self._response_formatter = ResponseFormatter()
         self._code_generator: CodeGenerator | None = None
         self._extra_routes: list[Route] = []
+        self._docs_url = docs_url
+        self._redoc_url = redoc_url
+        self._openapi_url = openapi_url
 
     @property
     def harness(self) -> HarnessEngine | None:
@@ -424,11 +436,29 @@ class AgenticApp:
 
         routes.extend(self._extra_routes)
         routes.append(Route("/health", self._health_handler, methods=["GET"]))
+        routes.append(Route("/capabilities", self._capabilities_handler, methods=["GET"]))
+
+        # OpenAPI / Swagger / ReDoc
+        if self._openapi_url is not None:
+            from agenticapi.openapi import build_openapi_routes
+
+            routes.extend(
+                build_openapi_routes(
+                    title=self.title,
+                    version=self.version,
+                    endpoints=self._endpoints,
+                    description=self.description,
+                    openapi_url=self._openapi_url,
+                    docs_url=self._docs_url or "/docs",
+                    redoc_url=self._redoc_url or "/redoc",
+                )
+            )
 
         @asynccontextmanager
         async def lifespan(app: Starlette):  # type: ignore[no-untyped-def]
             await self._on_startup()
             yield
+            await self._on_shutdown()
 
         return Starlette(routes=routes, lifespan=lifespan)
 
@@ -508,8 +538,9 @@ class AgenticApp:
                 )
             except AgenticAPIError as exc:
                 status_code = EXCEPTION_STATUS_MAP.get(type(exc), 500)
+                response = AgentResponse(result=None, status="error", error=str(exc))
                 return JSONResponse(
-                    {"error": str(exc), "status": "error"},
+                    self._response_formatter.format_json(response),
                     status_code=status_code,
                 )
             except Exception as exc:
@@ -518,8 +549,9 @@ class AgenticApp:
                     endpoint_name=name,
                     error=str(exc),
                 )
+                response = AgentResponse(result=None, status="error", error="Internal server error")
                 return JSONResponse(
-                    {"error": "Internal server error", "status": "error"},
+                    self._response_formatter.format_json(response),
                     status_code=500,
                 )
 
@@ -534,11 +566,60 @@ class AgenticApp:
         Returns:
             JSON response with status and version.
         """
+        ops_health: list[dict[str, object]] = []
+        for agent in self._ops_agents:
+            try:
+                health = await agent.check_health()
+                ops_health.append(
+                    {
+                        "name": agent.name,
+                        "healthy": health.healthy,
+                        "message": health.message,
+                    }
+                )
+            except Exception as exc:
+                ops_health.append({"name": agent.name, "healthy": False, "message": str(exc)})
+
+        result: dict[str, object] = {
+            "status": "ok",
+            "version": self.version,
+            "endpoints": list(self._endpoints.keys()),
+        }
+        if ops_health:
+            result["ops_agents"] = ops_health
+        return JSONResponse(result)
+
+    async def _capabilities_handler(self, request: Request) -> JSONResponse:
+        """Capability discovery endpoint for external agents.
+
+        Returns structured metadata about all registered endpoints,
+        including descriptions, intent scopes, and autonomy levels.
+
+        Args:
+            request: The incoming Starlette request.
+
+        Returns:
+            JSON response with endpoint capabilities.
+        """
+        capabilities: list[dict[str, object]] = []
+        for name, ep in self._endpoints.items():
+            cap: dict[str, object] = {
+                "name": name,
+                "description": ep.description,
+                "autonomy_level": ep.autonomy_level,
+            }
+            if ep.intent_scope is not None:
+                cap["intent_scope"] = {
+                    "allowed_intents": ep.intent_scope.allowed_intents,
+                    "denied_intents": ep.intent_scope.denied_intents,
+                }
+            capabilities.append(cap)
+
         return JSONResponse(
             {
-                "status": "ok",
+                "title": self.title,
                 "version": self.version,
-                "endpoints": list(self._endpoints.keys()),
+                "endpoints": capabilities,
             }
         )
 
@@ -552,6 +633,15 @@ class AgenticApp:
             version=self.version,
             endpoint_count=len(self._endpoints),
         )
+
+    async def _on_shutdown(self) -> None:
+        """Shutdown hook for stopping ops agents."""
+        for agent in self._ops_agents:
+            try:
+                await agent.stop()
+            except Exception as exc:
+                logger.error("ops_agent_stop_failed", agent_name=agent.name, error=str(exc))
+        logger.info("agenticapi_shutdown")
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         """ASGI interface.
