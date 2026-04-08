@@ -11,12 +11,12 @@ from typing import TYPE_CHECKING, Any
 from agenticapi.app import AgenticApp
 from agenticapi.harness.engine import HarnessEngine
 from agenticapi.interface.intent import IntentAction
+from agenticapi.interface.response import AgentResponse
 from agenticapi.runtime.llm.mock import MockBackend
 from agenticapi.testing.assertions import assert_code_safe, assert_intent_parsed, assert_policy_enforced
 
 if TYPE_CHECKING:
     from agenticapi.harness.policy.base import Policy
-    from agenticapi.interface.response import AgentResponse
 
 
 class AgentTestCase:
@@ -92,11 +92,13 @@ class AgentTestCase:
         Returns:
             The AgentResponse from processing.
         """
-        return await self.app.process_intent(
+        result = await self.app.process_intent(
             raw_request,
             endpoint_name=endpoint_name,
             session_id=session_id,
         )
+        assert isinstance(result, AgentResponse), f"Expected AgentResponse, got {type(result)}"
+        return result
 
     def get_audit_records(
         self,

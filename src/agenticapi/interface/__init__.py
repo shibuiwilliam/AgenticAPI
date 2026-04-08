@@ -10,12 +10,16 @@ from __future__ import annotations
 
 from agenticapi.interface.endpoint import AgentEndpointDef
 from agenticapi.interface.intent import Intent, IntentAction, IntentParser, IntentScope
-from agenticapi.interface.response import AgentResponse, ResponseFormatter
+from agenticapi.interface.response import AgentResponse, FileResult, ResponseFormatter
 from agenticapi.interface.session import Session, SessionManager
+from agenticapi.interface.tasks import AgentTasks
+from agenticapi.interface.upload import UploadedFiles, UploadFile
 
 __all__ = [
     "AgentEndpointDef",
     "AgentResponse",
+    "AgentTasks",
+    "FileResult",
     "Intent",
     "IntentAction",
     "IntentParser",
@@ -23,4 +27,6 @@ __all__ = [
     "ResponseFormatter",
     "Session",
     "SessionManager",
+    "UploadFile",
+    "UploadedFiles",
 ]

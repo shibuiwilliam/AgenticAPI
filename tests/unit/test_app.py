@@ -273,3 +273,103 @@ class TestHTTPErrorStatusCodes:
         data = response.json()
         assert data["status"] == "error"
         assert "unexpected" in data["error"]
+
+
+class TestMiddleware:
+    async def test_add_middleware_via_constructor(self) -> None:
+        """Middleware passed to constructor is applied to requests."""
+        from starlette.middleware import Middleware
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        class AddHeaderMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Any, call_next: Any) -> Any:
+                response = await call_next(request)
+                response.headers["X-Custom-Header"] = "middleware-works"
+                return response
+
+        app = AgenticApp(middleware=[Middleware(AddHeaderMiddleware)])
+
+        @app.agent_endpoint(name="test")
+        async def handler(intent: Intent, context: AgentContext) -> dict[str, str]:
+            return {"ok": "true"}
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/agent/test", json={"intent": "hello"})
+
+        assert response.status_code == 200
+        assert response.headers["x-custom-header"] == "middleware-works"
+
+    async def test_add_middleware_method(self) -> None:
+        """add_middleware() applies middleware to subsequent requests."""
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        class TimingMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Any, call_next: Any) -> Any:
+                response = await call_next(request)
+                response.headers["X-Process-Time"] = "42ms"
+                return response
+
+        app = AgenticApp()
+        app.add_middleware(TimingMiddleware)
+
+        @app.agent_endpoint(name="test")
+        async def handler(intent: Intent, context: AgentContext) -> dict[str, str]:
+            return {"ok": "true"}
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/agent/test", json={"intent": "hello"})
+
+        assert response.headers["x-process-time"] == "42ms"
+
+    async def test_middleware_applies_to_health_endpoint(self) -> None:
+        """Middleware wraps all routes including /health."""
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        class TagMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Any, call_next: Any) -> Any:
+                response = await call_next(request)
+                response.headers["X-Tagged"] = "yes"
+                return response
+
+        app = AgenticApp()
+        app.add_middleware(TagMiddleware)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get("/health")
+
+        assert response.status_code == 200
+        assert response.headers["x-tagged"] == "yes"
+
+    async def test_multiple_middleware_stack(self) -> None:
+        """Multiple middleware are applied in order."""
+        from starlette.middleware import Middleware
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        class FirstMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Any, call_next: Any) -> Any:
+                response = await call_next(request)
+                response.headers["X-First"] = "1"
+                return response
+
+        class SecondMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Any, call_next: Any) -> Any:
+                response = await call_next(request)
+                response.headers["X-Second"] = "2"
+                return response
+
+        app = AgenticApp(middleware=[Middleware(FirstMiddleware), Middleware(SecondMiddleware)])
+
+        @app.agent_endpoint(name="test")
+        async def handler(intent: Intent, context: AgentContext) -> dict[str, str]:
+            return {"ok": "true"}
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/agent/test", json={"intent": "hello"})
+
+        assert response.headers["x-first"] == "1"
+        assert response.headers["x-second"] == "2"
+
+    def test_no_middleware_by_default(self) -> None:
+        """App created without middleware has empty middleware list."""
+        app = AgenticApp()
+        assert len(app._middleware) == 0

@@ -1,25 +1,30 @@
 # Module Reference
 
-## Source Structure
+## Source Structure (80 files, 10,375 lines)
 
 ```
 src/agenticapi/
-    __init__.py              Public API exports (AgenticApp, Intent, policies, etc.)
-    app.py                   AgenticApp — main ASGI application
+    __init__.py              Public API exports (41 symbols)
+    app.py                   AgenticApp — main ASGI application (763 lines)
     routing.py               AgentRouter — endpoint grouping with prefix/tags
     types.py                 AutonomyLevel, TraceLevel, Severity enums; JSON/Headers type aliases
     exceptions.py            Exception hierarchy with HTTP status code mapping
+    openapi.py               OpenAPI 3.1.0 schema generation, Swagger UI, ReDoc
+    security.py              Authenticator, AuthUser, APIKeyHeader, HTTPBearer, HTTPBasic
     params.py                HarnessDepends — dependency injection marker
     _compat.py               Python version check (requires 3.13+)
 
     interface/
         intent.py            Intent, IntentAction, IntentParser, IntentScope
-        response.py          AgentResponse, ResponseFormatter
+        response.py          AgentResponse, ResponseFormatter, FileResult
         session.py           Session, SessionManager (in-memory with TTL)
         endpoint.py          AgentEndpointDef (endpoint configuration dataclass)
+        tasks.py             AgentTasks — background tasks (like FastAPI's BackgroundTasks)
+        upload.py            UploadFile, UploadedFiles — multipart file upload support
         compat/
             rest.py          RESTCompat, expose_as_rest — REST route generation
             fastapi.py       mount_fastapi, mount_in_agenticapi — ASGI mount
+            mcp.py           MCPCompat, expose_as_mcp — MCP server (pip install agenticapi[mcp])
         a2a/
             protocol.py      A2AMessage, A2AMessageType, A2ARequest, A2AResponse
             capability.py    Capability, CapabilityRegistry
@@ -54,14 +59,14 @@ src/agenticapi/
         context.py           AgentContext, ContextItem, ContextWindow (token budget)
         llm/
             base.py          LLMBackend protocol, LLMMessage, LLMPrompt, LLMResponse, LLMChunk, LLMUsage
-            anthropic.py     AnthropicBackend (Claude) with timeout
-            openai.py        OpenAIBackend (GPT) with timeout, max_completion_tokens
-            gemini.py        GeminiBackend (Gemini) with timeout
+            anthropic.py     AnthropicBackend (Claude, default: claude-sonnet-4-6)
+            openai.py        OpenAIBackend (GPT, default: gpt-5.4-mini)
+            gemini.py        GeminiBackend (Gemini, default: gemini-2.5-flash)
             mock.py          MockBackend — FIFO response queue for testing
         tools/
             base.py          Tool protocol, ToolDefinition, ToolCapability enum
             registry.py      ToolRegistry — centralized tool registration and lookup
-            database.py      DatabaseTool — SQL execution with read-only mode, comment-stripped write detection
+            database.py      DatabaseTool — SQL execution with read-only mode
             http_client.py   HttpClientTool — httpx wrapper with allowed_hosts
             cache.py         CacheTool — in-memory TTL cache with FIFO eviction
             queue.py         QueueTool — async queue with named channels
@@ -103,17 +108,19 @@ AgenticAPIError
 │   ├── CodeExecutionError      -> HTTP 500
 │   ├── ToolError               -> HTTP 502
 │   └── ContextError            -> HTTP 500
-└── InterfaceError
-    ├── IntentParseError        -> HTTP 400
-    ├── SessionError            -> HTTP 400
-    └── A2AError                -> HTTP 502
+├── InterfaceError
+│   ├── IntentParseError        -> HTTP 400
+│   ├── SessionError            -> HTTP 400
+│   └── A2AError                -> HTTP 502
+├── AuthenticationError         -> HTTP 401
+└── AuthorizationError          -> HTTP 403
 ```
 
 ## Public API (`from agenticapi import ...`)
 
 ```python
 # Core
-AgenticApp, AgentRouter, AgentContext, AgentResponse
+AgenticApp, AgentRouter, AgentContext, AgentResponse, AgentTasks
 
 # Intent
 Intent, IntentAction, IntentParser, IntentScope
@@ -122,12 +129,23 @@ Intent, IntentAction, IntentParser, IntentScope
 HarnessEngine, CodePolicy, DataPolicy, ResourcePolicy, RuntimePolicy
 ApprovalRule, ApprovalWorkflow
 
+# Security
+Authenticator, AuthUser, AuthCredentials
+APIKeyHeader, APIKeyQuery, HTTPBearer, HTTPBasic
+
+# File handling
+FileResult, UploadFile, UploadedFiles
+
 # Exceptions
 AgenticAPIError, HarnessError, PolicyViolation, SandboxViolation
 ApprovalRequired, ApprovalDenied, ApprovalTimeout
+AuthenticationError, AuthorizationError
 CodeGenerationError, CodeExecutionError, ToolError
 IntentParseError, SessionError
 
 # Types
 AutonomyLevel, TraceLevel, Severity
+
+# Version
+__version__  # "0.1.0"
 ```

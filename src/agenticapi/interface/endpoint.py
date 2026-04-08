@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
     from agenticapi.harness.policy.base import Policy
     from agenticapi.interface.intent import IntentScope
+    from agenticapi.security import Authenticator
 
 
 @dataclass(slots=True)
@@ -32,6 +33,8 @@ class AgentEndpointDef:
         policies: List of policies to enforce on this endpoint.
         approval: Optional approval workflow configuration.
         sandbox: Optional sandbox configuration override.
+        enable_mcp: Whether to expose this endpoint as an MCP tool.
+        auth: Optional Authenticator for this endpoint.
     """
 
     name: str
@@ -42,3 +45,5 @@ class AgentEndpointDef:
     policies: list[Policy] = field(default_factory=list)
     approval: Any | None = None
     sandbox: Any | None = None
+    enable_mcp: bool = False
+    auth: Authenticator | None = None

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from agenticapi.interface.intent import IntentScope
+    from agenticapi.security import Authenticator
 
 
 class AgentRouter:
@@ -37,15 +38,18 @@ class AgentRouter:
         *,
         prefix: str = "",
         tags: list[str] | None = None,
+        auth: Authenticator | None = None,
     ) -> None:
         """Initialize the router.
 
         Args:
             prefix: Prefix to prepend to all endpoint names.
             tags: Optional tags for documentation/grouping.
+            auth: Optional default Authenticator for all endpoints on this router.
         """
         self._prefix = prefix
         self._tags = tags or []
+        self._auth: Authenticator | None = auth
         self._endpoints: dict[str, AgentEndpointDef] = {}
 
     def agent_endpoint(
@@ -58,6 +62,8 @@ class AgentRouter:
         policies: list[Any] | None = None,
         approval: Any | None = None,
         sandbox: Any | None = None,
+        enable_mcp: bool = False,
+        auth: Authenticator | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Register an agent endpoint on this router.
 
@@ -71,6 +77,8 @@ class AgentRouter:
             policies: List of policies to enforce.
             approval: Optional approval workflow configuration.
             sandbox: Optional sandbox configuration.
+            enable_mcp: Whether to expose this endpoint as an MCP tool.
+            auth: Optional Authenticator for this endpoint. Overrides router-level auth.
 
         Returns:
             A decorator that registers the handler function.
@@ -87,6 +95,8 @@ class AgentRouter:
                 policies=policies or [],
                 approval=approval,
                 sandbox=sandbox,
+                enable_mcp=enable_mcp,
+                auth=auth or self._auth,
             )
             return func
 

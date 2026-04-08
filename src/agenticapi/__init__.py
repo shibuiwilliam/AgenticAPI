@@ -9,6 +9,8 @@ from agenticapi.exceptions import (
     ApprovalDenied,
     ApprovalRequired,
     ApprovalTimeout,
+    AuthenticationError,
+    AuthorizationError,
     CodeExecutionError,
     CodeGenerationError,
     HarnessError,
@@ -29,23 +31,40 @@ from agenticapi.harness import (
 )
 from agenticapi.interface import (
     AgentResponse,
+    AgentTasks,
+    FileResult,
     Intent,
     IntentAction,
     IntentParser,
     IntentScope,
+    UploadedFiles,
+    UploadFile,
 )
 from agenticapi.routing import AgentRouter
 from agenticapi.runtime.context import AgentContext
+from agenticapi.security import (
+    APIKeyHeader,
+    APIKeyQuery,
+    AuthCredentials,
+    Authenticator,
+    AuthUser,
+    HTTPBasic,
+    HTTPBearer,
+)
 from agenticapi.types import AutonomyLevel, Severity, TraceLevel
 
 __version__ = "0.1.0"
 
 __all__ = [
+    # Security
+    "APIKeyHeader",
+    "APIKeyQuery",
     # Runtime
     "AgentContext",
     # Interface
     "AgentResponse",
     "AgentRouter",
+    "AgentTasks",
     # Exceptions
     "AgenticAPIError",
     # Core app
@@ -55,6 +74,11 @@ __all__ = [
     "ApprovalRule",
     "ApprovalTimeout",
     "ApprovalWorkflow",
+    "AuthCredentials",
+    "AuthUser",
+    "AuthenticationError",
+    "Authenticator",
+    "AuthorizationError",
     # Types
     "AutonomyLevel",
     "CodeExecutionError",
@@ -62,6 +86,11 @@ __all__ = [
     # Harness
     "CodePolicy",
     "DataPolicy",
+    # File handling
+    "FileResult",
+    # Security (contd)
+    "HTTPBasic",
+    "HTTPBearer",
     "HarnessEngine",
     "HarnessError",
     "Intent",
@@ -77,6 +106,9 @@ __all__ = [
     "Severity",
     "ToolError",
     "TraceLevel",
+    # File upload
+    "UploadFile",
+    "UploadedFiles",
     # Version
     "__version__",
 ]

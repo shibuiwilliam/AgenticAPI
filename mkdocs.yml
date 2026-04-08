@@ -1,0 +1,111 @@
+site_name: AgenticAPI
+site_description: Agent-native web framework with harness engineering for Python
+site_url: https://shibuiwilliam.github.io/AgenticAPI/
+repo_url: https://github.com/shibuiwilliam/AgenticAPI
+repo_name: shibuiwilliam/AgenticAPI
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            heading_level: 2
+            members_order: source
+            show_signature_annotations: true
+            separate_signature: true
+            docstring_style: google
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets
+  - toc:
+      permalink: true
+  - attr_list
+  - md_in_html
+  - tables
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Examples: getting-started/examples.md
+  - Guides:
+    - Architecture: guides/architecture.md
+    - Intent System: guides/intents.md
+    - Harness & Safety: guides/harness.md
+    - Authentication: guides/authentication.md
+    - File Handling: guides/file-handling.md
+    - LLM Backends: guides/llm-backends.md
+    - Tools: guides/tools.md
+    - Dynamic Pipelines: guides/pipelines.md
+    - Approval Workflows: guides/approval.md
+    - Sessions: guides/sessions.md
+    - OpenAPI & Swagger: guides/openapi.md
+    - Agent-to-Agent: guides/a2a.md
+    - Ops Agents: guides/ops-agents.md
+    - REST Compatibility: guides/rest-compat.md
+    - Testing: guides/testing.md
+    - Security Model: guides/security.md
+  - API Reference:
+    - AgenticApp: api/app.md
+    - Intent, Response & Tasks: api/interface.md
+    - Security: api/security.md
+    - File Upload & Download: api/upload.md
+    - Harness Engine: api/harness.md
+    - Policies: api/policies.md
+    - Sandbox & Analysis: api/sandbox.md
+    - Approval: api/approval.md
+    - Audit: api/audit.md
+    - LLM Backends: api/llm.md
+    - Tools: api/tools.md
+    - Pipeline: api/pipeline.md
+    - Ops Agents: api/ops.md
+    - Agent-to-Agent: api/a2a.md
+    - Context: api/context.md
+    - Types & Exceptions: api/types.md
+    - Testing Utilities: api/testing.md
+  - Development:
+    - Contributing: development/contributing.md
+    - Module Reference: development/modules.md

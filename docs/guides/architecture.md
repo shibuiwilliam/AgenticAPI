@@ -36,7 +36,12 @@ agenticapi.testing    -> all modules
 HTTP POST /agent/{endpoint_name}
     |
     v
-Parse JSON body: {"intent": "...", "session_id": "..."}
+Authentication (if auth= configured) -> 401 if invalid
+    |
+    v
+Parse request body:
+    |-- JSON: {"intent": "...", "session_id": "..."}
+    |-- Multipart: intent form field + file fields -> UploadedFiles
     |
     v
 AgenticApp.process_intent()
@@ -75,14 +80,21 @@ Execute intent:
     |   4. Return ExecutionResult -> AgentResponse
     |
     |-- [Direct handler path]:
-    |   1. Call handler(intent, context)
-    |   2. Wrap result in AgentResponse
+    |   1. Inject AgentTasks, UploadedFiles if handler declares them
+    |   2. Call handler(intent, context, ...)
+    |   3. If result is Response/FileResult -> pass through (file download)
+    |   4. Otherwise -> wrap result in AgentResponse
+    |
+    v
+Execute background tasks (AgentTasks) if any
     |
     v
 Update session with result summary
     |
     v
-Return AgentResponse as JSON (HTTP 200, 202, 4xx, 5xx)
+Return response:
+    |-- AgentResponse -> JSON (HTTP 200, 202, 4xx, 5xx)
+    |-- Response/FileResponse/StreamingResponse -> direct passthrough
 ```
 
 ## Mapping to FastAPI/Starlette
@@ -94,8 +106,13 @@ Return AgentResponse as JSON (HTTP 200, 202, 4xx, 5xx)
 | `APIRouter` | `AgentRouter` | Endpoint grouping with prefix/tags |
 | `Request` | `Intent` | Input (natural language -> structured) |
 | `Response` | `AgentResponse` | Output with result, reasoning, trace |
+| `BackgroundTasks` | `AgentTasks` | Post-response task execution |
+| `UploadFile` | `UploadedFiles` | File upload via multipart |
+| `FileResponse` | `FileResult` | File download helper |
+| Security schemes | `Authenticator` | API key, Bearer, Basic auth |
 | `Depends()` | `HarnessDepends()` | Dependency injection |
-| Middleware | `DynamicPipeline` | Dynamic middleware composition |
+| `app.add_middleware()` | `app.add_middleware()` | Starlette middleware (CORS, compression) |
+| Middleware stack | + `DynamicPipeline` | DynamicPipeline is for agent context enrichment inside handlers |
 | Pydantic model | Pydantic model | Schema definitions |
 | ASGI interface | ASGI interface | Direct uvicorn compatibility |
 
@@ -153,6 +170,32 @@ GET /capabilities -> {
 ```
 
 This enables agents to programmatically discover endpoints, understand what intents are accepted, and adapt their requests accordingly.
+
+## OpenAPI / Swagger / ReDoc
+
+AgenticApp automatically generates OpenAPI 3.1.0 documentation:
+
+- `GET /openapi.json` — OpenAPI schema
+- `GET /docs` — Swagger UI
+- `GET /redoc` — ReDoc
+
+Disable with `AgenticApp(docs_url=None, redoc_url=None, openapi_url=None)`.
+
+## MCP (Model Context Protocol) Support
+
+Agent endpoints can be exposed as MCP tools for use by Claude Desktop, Cursor, and other MCP clients. Requires `pip install agenticapi[mcp]`.
+
+```python
+@app.agent_endpoint(name="search", enable_mcp=True)
+async def search(intent, context):
+    ...
+
+# Expose MCP-enabled endpoints at /mcp
+from agenticapi.interface.compat import expose_as_mcp
+app.add_routes(expose_as_mcp(app))
+```
+
+Test with MCP Inspector: `npx @modelcontextprotocol/inspector http://localhost:8000/mcp`
 
 ## Safety Architecture (Defense in Depth)
 

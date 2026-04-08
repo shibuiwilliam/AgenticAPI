@@ -2,6 +2,10 @@
 
 Demonstrates:
 - AgenticApp with HarnessEngine, policies, approval, sandbox monitors/validators
+- Starlette middleware (CORS, request timing)
+- AgentTasks for background tasks (notification after shipment creation)
+- File upload (multipart/form-data with UploadedFiles injection)
+- File download (FileResult for CSV export)
 - DynamicPipeline for request preprocessing (middleware-like stages)
 - OpsAgent for autonomous operational monitoring
 - A2A CapabilityRegistry and TrustScorer for inter-agent trust
@@ -66,6 +70,16 @@ Test with curl:
         -H "Content-Type: application/json" \
         -d '{"query": "add 100 units of Monitor"}'
 
+    # --- File upload ---
+    curl -X POST http://127.0.0.1:8000/agent/files.upload \
+        -F 'intent=Analyze this inventory report' \
+        -F 'document=@report.csv'
+
+    # --- File download (CSV export) ---
+    curl -X POST http://127.0.0.1:8000/agent/files.export \
+        -H "Content-Type: application/json" \
+        -d '{"intent": "Export inventory as CSV"}' -o inventory.csv
+
     # --- Health check (includes ops agent status) ---
     curl http://127.0.0.1:8000/health
 
@@ -76,7 +90,11 @@ Test with curl:
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.cors import CORSMiddleware
 
 from agenticapi.app import AgenticApp
 from agenticapi.application.pipeline import DynamicPipeline, PipelineStage
@@ -96,7 +114,7 @@ from agenticapi.interface.a2a.capability import Capability, CapabilityRegistry
 from agenticapi.interface.a2a.trust import TrustPolicy, TrustScorer
 from agenticapi.interface.compat.rest import RESTCompat
 from agenticapi.interface.intent import Intent, IntentScope
-from agenticapi.interface.response import AgentResponse
+from agenticapi.interface.response import AgentResponse, FileResult
 from agenticapi.ops.base import OpsAgent, OpsHealthStatus
 from agenticapi.routing import AgentRouter
 from agenticapi.runtime.tools.cache import CacheTool
@@ -107,6 +125,8 @@ from agenticapi.runtime.tools.registry import ToolRegistry
 from agenticapi.types import AutonomyLevel, Severity
 
 if TYPE_CHECKING:
+    from agenticapi.interface.tasks import AgentTasks
+    from agenticapi.interface.upload import UploadedFiles
     from agenticapi.runtime.context import AgentContext
 
 
@@ -227,7 +247,7 @@ resource_policy = ResourcePolicy(
 )
 
 runtime_policy = RuntimePolicy(
-    max_code_complexity=200,
+    max_code_complexity=500,
     max_code_lines=300,
 )
 
@@ -561,13 +581,18 @@ async def shipment_track(intent: Intent, context: AgentContext) -> AgentResponse
     ),
     autonomy_level="supervised",
 )
-async def shipment_create(intent: Intent, context: AgentContext) -> AgentResponse:
-    """Handle shipment creation (requires logistics manager approval)."""
+async def shipment_create(intent: Intent, context: AgentContext, tasks: AgentTasks) -> AgentResponse:
+    """Handle shipment creation with background notification tasks."""
+    # Schedule background tasks that run after the response is sent
+    tasks.add_task(_notify_logistics, intent_raw=intent.raw, trace_id=context.trace_id)
+    tasks.add_task(_log_shipment_request, intent_raw=intent.raw)
+
     return AgentResponse(
         result={
             "message": f"Shipment creation requested: {intent.raw}",
             "approval_required": True,
             "required_approvers": ["logistics_manager", "warehouse_lead"],
+            "background_tasks_scheduled": tasks.pending_count,
         },
         status="pending_review",
         reasoning="Write operations on shipments require logistics manager approval per policy",
@@ -575,7 +600,100 @@ async def shipment_create(intent: Intent, context: AgentContext) -> AgentRespons
 
 
 # ============================================================================
-# 12. LLM PROVIDER SELECTION
+# 12. FILE HANDLING ENDPOINTS — upload and download
+# ============================================================================
+
+files_router = AgentRouter(prefix="files", tags=["files"])
+
+
+@files_router.agent_endpoint(
+    name="upload",
+    description="Upload inventory documents (CSV, PDF) for analysis",
+    intent_scope=IntentScope(
+        allowed_intents=["*"],
+    ),
+    autonomy_level="auto",
+)
+async def file_upload(intent: Intent, context: AgentContext, files: UploadedFiles) -> dict[str, Any]:
+    """Accept uploaded files and return metadata.
+
+    Upload via multipart/form-data:
+        curl -F 'intent=Analyze this' -F 'document=@report.csv' /agent/files.upload
+    """
+    if not files:
+        return {"message": "No files uploaded", "hint": "Use multipart/form-data with a file field"}
+
+    file_info: list[dict[str, Any]] = []
+    for field_name, upload in files.items():
+        file_info.append(
+            {
+                "field": field_name,
+                "filename": upload.filename,
+                "content_type": upload.content_type,
+                "size_bytes": upload.size,
+            }
+        )
+
+    return {
+        "message": f"Received {len(files)} file(s)",
+        "files": file_info,
+        "intent": intent.raw,
+    }
+
+
+@files_router.agent_endpoint(
+    name="export",
+    description="Export inventory data as CSV download",
+    intent_scope=IntentScope(
+        allowed_intents=["*"],
+    ),
+    autonomy_level="auto",
+)
+async def file_export(intent: Intent, context: AgentContext) -> FileResult:
+    """Generate a CSV export of all warehouse inventory.
+
+    Returns a downloadable CSV file.
+    """
+    lines: list[str] = ["warehouse,sku,name,category,stock,price"]
+    for warehouse, items in WAREHOUSES.items():
+        for item in items:
+            lines.append(f"{warehouse},{item['sku']},{item['name']},{item['category']},{item['stock']},{item['price']}")
+
+    csv_content = "\n".join(lines)
+    return FileResult(
+        content=csv_content.encode("utf-8"),
+        media_type="text/csv",
+        filename="inventory_export.csv",
+    )
+
+
+# ============================================================================
+# 13. BACKGROUND TASK FUNCTIONS
+# ============================================================================
+# These run after the response is sent, triggered by AgentTasks.add_task().
+
+
+async def _notify_logistics(*, intent_raw: str, trace_id: str) -> None:
+    """Notify the logistics team about a shipment request.
+
+    In production this would send a Slack message or email.
+    """
+    import structlog
+
+    logger = structlog.get_logger("background")
+    logger.info("logistics_notified", intent=intent_raw[:100], trace_id=trace_id)
+
+
+def _log_shipment_request(*, intent_raw: str) -> None:
+    """Log the shipment request for analytics (sync background task)."""
+    import structlog
+
+    logger = structlog.get_logger("background")
+    logger.info("shipment_request_logged", intent=intent_raw[:100])
+
+
+# ============================================================================
+# 14. LLM PROVIDER SELECTION
 # ============================================================================
 # Set AGENTICAPI_LLM_PROVIDER to "openai" (default), "anthropic", or "gemini".
 # The corresponding API key env var must also be set.
@@ -614,7 +732,7 @@ llm = _create_llm_backend()
 
 
 # ============================================================================
-# 13. APP ASSEMBLY — bring it all together
+# 15. APP ASSEMBLY — bring it all together
 # ============================================================================
 
 app = AgenticApp(
@@ -627,13 +745,40 @@ app = AgenticApp(
 # Register routers
 app.include_router(inventory_router)
 app.include_router(shipping_router)
+app.include_router(files_router)
 
 # Register ops agent
 app.register_ops_agent(inventory_monitor)
 
 
 # ============================================================================
-# 14. REST COMPATIBILITY — expose endpoints as conventional REST
+# 16. MIDDLEWARE — CORS + request timing (ASGI-level, wraps all routes)
+# ============================================================================
+
+# CORS — allow cross-origin requests from any frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Custom request timing middleware — adds X-Process-Time header
+class RequestTimingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Any, call_next: Any) -> Any:
+        start = time.monotonic()
+        response = await call_next(request)
+        duration_ms = (time.monotonic() - start) * 1000
+        response.headers["X-Process-Time"] = f"{duration_ms:.1f}ms"
+        return response
+
+
+app.add_middleware(RequestTimingMiddleware)
+
+
+# ============================================================================
+# 18. REST COMPATIBILITY — expose endpoints as conventional REST
 # ============================================================================
 
 rest_compat = RESTCompat(app, prefix="/rest")
@@ -649,7 +794,7 @@ app.add_routes(rest_routes)
 
 
 # ============================================================================
-# 15. PROGRAMMATIC API DEMO (for use in tests or scripts)
+# 19. PROGRAMMATIC API DEMO (for use in tests or scripts)
 # ============================================================================
 
 

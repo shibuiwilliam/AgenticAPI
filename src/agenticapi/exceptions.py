@@ -102,6 +102,14 @@ class A2AError(InterfaceError):
     """Agent-to-Agent communication error."""
 
 
+class AuthenticationError(InterfaceError):
+    """Authentication failed or credentials missing."""
+
+
+class AuthorizationError(InterfaceError):
+    """Authenticated user lacks required permissions."""
+
+
 # --- HTTP status code mapping ---
 
 EXCEPTION_STATUS_MAP: dict[type[AgenticAPIError], int] = {
@@ -116,4 +124,6 @@ EXCEPTION_STATUS_MAP: dict[type[AgenticAPIError], int] = {
     ToolError: 502,
     SessionError: 400,
     A2AError: 502,
+    AuthenticationError: 401,
+    AuthorizationError: 403,
 }

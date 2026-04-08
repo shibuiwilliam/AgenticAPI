@@ -7,6 +7,7 @@ code generation, harness execution, and session management.
 
 from __future__ import annotations
 
+import inspect
 import json
 import uuid
 from contextlib import asynccontextmanager
@@ -14,20 +15,24 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 from starlette.applications import Starlette
-from starlette.responses import JSONResponse
-from starlette.routing import Route
+from starlette.middleware import Middleware
+from starlette.responses import JSONResponse, Response
+from starlette.routing import BaseRoute, Route
 
 from agenticapi.exceptions import (
     EXCEPTION_STATUS_MAP,
     AgenticAPIError,
     ApprovalRequired,
+    AuthenticationError,
     IntentParseError,
     PolicyViolation,
 )
 from agenticapi.interface.endpoint import AgentEndpointDef
 from agenticapi.interface.intent import Intent, IntentParser, IntentScope
-from agenticapi.interface.response import AgentResponse, ResponseFormatter
+from agenticapi.interface.response import AgentResponse, FileResult, ResponseFormatter
 from agenticapi.interface.session import SessionManager
+from agenticapi.interface.tasks import AgentTasks
+from agenticapi.interface.upload import UploadedFiles, UploadFile
 from agenticapi.runtime.context import AgentContext
 
 if TYPE_CHECKING:
@@ -41,6 +46,7 @@ if TYPE_CHECKING:
     from agenticapi.runtime.code_generator import CodeGenerator
     from agenticapi.runtime.llm.base import LLMBackend
     from agenticapi.runtime.tools.registry import ToolRegistry
+    from agenticapi.security import Authenticator, AuthUser
 
 logger = structlog.get_logger(__name__)
 
@@ -71,6 +77,8 @@ class AgenticApp:
         harness: HarnessEngine | None = None,
         llm: LLMBackend | None = None,
         tools: ToolRegistry | None = None,
+        middleware: list[Middleware] | None = None,
+        auth: Authenticator | None = None,
         docs_url: str | None = "/docs",
         redoc_url: str | None = "/redoc",
         openapi_url: str | None = "/openapi.json",
@@ -84,6 +92,10 @@ class AgenticApp:
             harness: Optional HarnessEngine for policy evaluation and sandbox execution.
             llm: Optional LLM backend for intent parsing and code generation.
             tools: Optional ToolRegistry defining tools available to generated code.
+            middleware: Optional list of Starlette Middleware instances to apply.
+                Analogous to FastAPI's middleware parameter.
+            auth: Optional default Authenticator applied to all endpoints.
+                Per-endpoint ``auth=`` overrides this. Set to None to disable auth.
             docs_url: URL path for Swagger UI. Set to None to disable.
             redoc_url: URL path for ReDoc UI. Set to None to disable.
             openapi_url: URL path for OpenAPI JSON schema. Set to None to disable all docs.
@@ -101,7 +113,9 @@ class AgenticApp:
         self._intent_parser = IntentParser(llm=llm)
         self._response_formatter = ResponseFormatter()
         self._code_generator: CodeGenerator | None = None
-        self._extra_routes: list[Route] = []
+        self._extra_routes: list[BaseRoute] = []
+        self._auth: Authenticator | None = auth
+        self._middleware: list[Middleware] = list(middleware) if middleware else []
         self._docs_url = docs_url
         self._redoc_url = redoc_url
         self._openapi_url = openapi_url
@@ -126,6 +140,8 @@ class AgenticApp:
         policies: list[Any] | None = None,
         approval: Any | None = None,
         sandbox: Any | None = None,
+        enable_mcp: bool = False,
+        auth: Authenticator | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Register an agent endpoint.
 
@@ -140,6 +156,8 @@ class AgenticApp:
             policies: List of policies to enforce on this endpoint.
             approval: Optional approval workflow configuration.
             sandbox: Optional sandbox configuration override.
+            enable_mcp: Whether to expose this endpoint as an MCP tool.
+            auth: Optional Authenticator for this endpoint. Overrides app-level auth.
 
         Returns:
             A decorator that registers the handler function.
@@ -155,6 +173,8 @@ class AgenticApp:
                 policies=policies or [],
                 approval=approval,
                 sandbox=sandbox,
+                enable_mcp=enable_mcp,
+                auth=auth,
             )
             # Force Starlette app rebuild on next request
             self._starlette_app = None
@@ -182,6 +202,8 @@ class AgenticApp:
                 policies=endpoint_def.policies,
                 approval=endpoint_def.approval,
                 sandbox=endpoint_def.sandbox,
+                enable_mcp=endpoint_def.enable_mcp,
+                auth=endpoint_def.auth,
             )
         self._starlette_app = None
 
@@ -193,13 +215,40 @@ class AgenticApp:
         """
         self._ops_agents.append(agent)
 
-    def add_routes(self, routes: list[Route]) -> None:
-        """Add extra Starlette routes (e.g. REST compat routes).
+    def add_routes(self, routes: list[BaseRoute]) -> None:
+        """Add extra Starlette routes or mounts (e.g. REST compat, MCP server).
 
         Args:
-            routes: List of Starlette Route objects to include.
+            routes: List of Starlette BaseRoute objects (Route or Mount) to include.
         """
         self._extra_routes.extend(routes)
+        self._starlette_app = None  # Force rebuild
+
+    def add_middleware(self, cls: Any, **kwargs: Any) -> None:
+        """Add Starlette middleware to the application.
+
+        Analogous to FastAPI's ``app.add_middleware()``. Middleware wraps the
+        entire ASGI application and is called on every request/response.
+
+        Use this for cross-cutting HTTP concerns like CORS, compression,
+        authentication headers, or request timing. For agent-specific request
+        context enrichment, use ``DynamicPipeline`` instead.
+
+        Args:
+            cls: A Starlette middleware class (e.g. ``CORSMiddleware``).
+            **kwargs: Keyword arguments passed to the middleware constructor.
+
+        Example:
+            from starlette.middleware.cors import CORSMiddleware
+
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=["http://localhost:3000"],
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
+        """
+        self._middleware.append(Middleware(cls, **kwargs))
         self._starlette_app = None  # Force rebuild
 
     async def process_intent(
@@ -208,7 +257,9 @@ class AgenticApp:
         *,
         endpoint_name: str | None = None,
         session_id: str | None = None,
-    ) -> AgentResponse:
+        auth_user: AuthUser | None = None,
+        files: dict[str, UploadFile] | None = None,
+    ) -> AgentResponse | Response:
         """Process a natural language request programmatically.
 
         This is the main programmatic API. Runs the full pipeline:
@@ -218,14 +269,20 @@ class AgenticApp:
         If no LLM is provided, calls the registered handler directly
         with the parsed intent and context.
 
+        When the handler returns a Starlette ``Response`` (e.g. ``FileResponse``,
+        ``StreamingResponse``) or a ``FileResult``, the response is returned
+        directly without JSON wrapping.
+
         Args:
             raw_request: The natural language request string.
             endpoint_name: Optional endpoint name to target. If None,
                 uses the first registered endpoint.
             session_id: Optional session ID for multi-turn conversations.
+            auth_user: Optional authenticated user from the security layer.
+            files: Optional uploaded files from multipart form data.
 
         Returns:
-            An AgentResponse with the result.
+            An AgentResponse (for JSON results) or a Starlette Response (for files).
         """
         # Resolve endpoint
         endpoint_def = self._resolve_endpoint(endpoint_name)
@@ -248,19 +305,33 @@ class AgenticApp:
 
         # Build context
         trace_id = uuid.uuid4().hex
+        metadata: dict[str, Any] = {}
+        if auth_user is not None:
+            metadata["auth_user"] = auth_user
+        if files:
+            metadata["files"] = files
         context = AgentContext(
             trace_id=trace_id,
             endpoint_name=endpoint_def.name,
             session_id=session.session_id,
+            user_id=auth_user.user_id if auth_user else None,
+            metadata=metadata,
         )
 
         # Execute
-        response = await self._execute_intent(intent, context, endpoint_def)
+        response, tasks = await self._execute_intent(intent, context, endpoint_def)
 
-        # Update session
-        result_summary = str(response.result)[:200] if response.result is not None else response.status
-        session.add_turn(intent_raw=raw_request, response_summary=result_summary)
+        # Update session (skip for raw Response — no structured result to summarize)
+        if isinstance(response, AgentResponse):
+            result_summary = str(response.result)[:200] if response.result is not None else response.status
+            session.add_turn(intent_raw=raw_request, response_summary=result_summary)
+        else:
+            session.add_turn(intent_raw=raw_request, response_summary="[file response]")
         await self._session_manager.update(session)
+
+        # Execute background tasks (after response is built but before return)
+        if tasks is not None and tasks.pending_count > 0:
+            await tasks.execute()
 
         return response
 
@@ -269,7 +340,7 @@ class AgenticApp:
         intent: Intent,
         context: AgentContext,
         endpoint_def: AgentEndpointDef,
-    ) -> AgentResponse:
+    ) -> tuple[AgentResponse | Response, AgentTasks | None]:
         """Execute the intent through the appropriate pipeline.
 
         If an LLM and harness are available, uses code generation and
@@ -281,10 +352,12 @@ class AgenticApp:
             endpoint_def: The endpoint definition.
 
         Returns:
-            An AgentResponse.
+            Tuple of (AgentResponse or Response, AgentTasks or None).
+            A raw Starlette Response is returned when the handler produces
+            a file download (FileResult, FileResponse, StreamingResponse).
         """
         if self._llm is not None and self._harness is not None:
-            return await self._execute_with_harness(intent, context, endpoint_def)
+            return await self._execute_with_harness(intent, context, endpoint_def), None
 
         # Direct handler invocation (no LLM/harness)
         return await self._execute_handler_directly(intent, context, endpoint_def)
@@ -360,10 +433,15 @@ class AgenticApp:
         intent: Intent,
         context: AgentContext,
         endpoint_def: AgentEndpointDef,
-    ) -> AgentResponse:
+    ) -> tuple[AgentResponse | Response, AgentTasks | None]:
         """Execute by calling the handler function directly.
 
         Used when no LLM is configured, for simple handler-based usage.
+        Supports automatic parameter injection for ``AgentTasks`` and
+        ``UploadedFiles``.
+
+        If the handler returns a Starlette ``Response`` or a ``FileResult``,
+        it is passed through directly (no JSON wrapping).
 
         Args:
             intent: The parsed intent.
@@ -371,10 +449,28 @@ class AgenticApp:
             endpoint_def: The endpoint definition.
 
         Returns:
-            An AgentResponse wrapping the handler's return value.
+            Tuple of (AgentResponse or Response, AgentTasks or None).
         """
+        # Inject optional handler parameters (AgentTasks, UploadedFiles)
+        tasks: AgentTasks | None = None
+        sig = inspect.signature(endpoint_def.handler)
+        handler_kwargs: dict[str, Any] = {}
+        for param_name, param in sig.parameters.items():
+            if param.annotation is AgentTasks or (
+                isinstance(param.annotation, str) and "AgentTasks" in param.annotation
+            ):
+                tasks = AgentTasks()
+                handler_kwargs[param_name] = tasks
+            elif param.annotation is UploadedFiles or (
+                isinstance(param.annotation, str) and "UploadedFiles" in param.annotation
+            ):
+                handler_kwargs[param_name] = context.metadata.get("files", {})
+
         try:
-            result = endpoint_def.handler(intent, context)
+            if handler_kwargs:
+                result = endpoint_def.handler(intent, context, **handler_kwargs)
+            else:
+                result = endpoint_def.handler(intent, context)
             # Support both sync and async handlers
             if hasattr(result, "__await__"):
                 result = await result
@@ -390,13 +486,19 @@ class AgenticApp:
                 result=None,
                 status="error",
                 error=str(exc),
-            )
+            ), tasks
+
+        # File response passthrough: bypass AgentResponse wrapping
+        if isinstance(result, Response):
+            return result, tasks
+        if isinstance(result, FileResult):
+            return result.to_response(), tasks
 
         return AgentResponse(
             result=result,
             status="completed",
             confidence=intent.confidence,
-        )
+        ), tasks
 
     def _resolve_endpoint(self, endpoint_name: str | None) -> AgentEndpointDef:
         """Resolve an endpoint by name.
@@ -428,7 +530,7 @@ class AgenticApp:
         Returns:
             A configured Starlette application.
         """
-        routes: list[Route] = []
+        routes: list[BaseRoute] = []
 
         for name, endpoint_def in self._endpoints.items():
             handler = self._create_endpoint_handler(name, endpoint_def)
@@ -460,7 +562,11 @@ class AgenticApp:
             yield
             await self._on_shutdown()
 
-        return Starlette(routes=routes, lifespan=lifespan)
+        return Starlette(
+            routes=routes,
+            lifespan=lifespan,
+            middleware=self._middleware or None,
+        )
 
     def _create_endpoint_handler(
         self,
@@ -485,23 +591,85 @@ class AgenticApp:
             An async Starlette handler function.
         """
 
-        async def handler(request: Request) -> JSONResponse:
-            try:
-                body = await request.json()
-            except json.JSONDecodeError:
-                return JSONResponse(
-                    {"error": "Invalid JSON body", "status": "error"},
-                    status_code=400,
-                )
-            except Exception as exc:
-                logger.error("request_body_read_failed", error=str(exc))
-                return JSONResponse(
-                    {"error": "Failed to read request body", "status": "error"},
-                    status_code=500,
-                )
+        async def handler(request: Request) -> Response:
+            # --- Authentication (before body parsing) ---
+            auth_user: AuthUser | None = None
+            effective_auth = endpoint_def.auth or self._auth
+            if effective_auth is not None:
+                try:
+                    credentials = await effective_auth.scheme(request)
+                    if credentials is not None:
+                        auth_user = await effective_auth.verify(credentials)
+                        if auth_user is None:
+                            raise AuthenticationError("Invalid credentials")
+                except AuthenticationError as exc:
+                    status_code = EXCEPTION_STATUS_MAP.get(type(exc), 401)
+                    return JSONResponse(
+                        {"error": str(exc), "status": "error"},
+                        status_code=status_code,
+                    )
+                except Exception as exc:
+                    logger.error("auth_failed", endpoint_name=name, error=str(exc))
+                    return JSONResponse(
+                        {"error": f"Authentication error: {exc}", "status": "error"},
+                        status_code=401,
+                    )
 
-            raw_intent = body.get("intent", "")
-            session_id = body.get("session_id")
+            # --- Parse request body (JSON or multipart) ---
+            uploaded_files: dict[str, UploadFile] | None = None
+            content_type = request.headers.get("content-type", "")
+
+            if "multipart/form-data" in content_type or "application/x-www-form-urlencoded" in content_type:
+                try:
+                    form = await request.form()
+                    raw_intent = str(form.get("intent", ""))
+                    raw_session_id = form.get("session_id")
+                    session_id = str(raw_session_id) if isinstance(raw_session_id, str) and raw_session_id else None
+
+                    # Collect uploaded files (50 MB per-file limit)
+                    max_file_size = 50 * 1024 * 1024
+                    uploaded_files = {}
+                    for key, value in form.multi_items():
+                        if hasattr(value, "read"):
+                            file_content = await value.read()
+                            if len(file_content) > max_file_size:
+                                return JSONResponse(
+                                    {
+                                        "error": f"File '{key}' exceeds maximum size ({len(file_content)} bytes, "
+                                        f"limit {max_file_size} bytes)",
+                                        "status": "error",
+                                    },
+                                    status_code=413,
+                                )
+                            uploaded_files[key] = UploadFile(
+                                filename=getattr(value, "filename", key) or key,
+                                content_type=getattr(value, "content_type", "application/octet-stream")
+                                or "application/octet-stream",
+                                content=file_content,
+                                size=len(file_content),
+                            )
+                except Exception as exc:
+                    logger.error("multipart_parse_failed", error=str(exc), error_type=type(exc).__name__)
+                    return JSONResponse(
+                        {"error": "Failed to parse multipart form data", "status": "error"},
+                        status_code=400,
+                    )
+            else:
+                try:
+                    body = await request.json()
+                except json.JSONDecodeError:
+                    return JSONResponse(
+                        {"error": "Invalid JSON body", "status": "error"},
+                        status_code=400,
+                    )
+                except Exception as exc:
+                    logger.error("request_body_read_failed", error=str(exc))
+                    return JSONResponse(
+                        {"error": "Failed to read request body", "status": "error"},
+                        status_code=500,
+                    )
+                raw_intent = body.get("intent", "")
+                session_id = body.get("session_id")
 
             if not raw_intent:
                 return JSONResponse(
@@ -514,7 +682,12 @@ class AgenticApp:
                     raw_intent,
                     endpoint_name=name,
                     session_id=session_id,
+                    auth_user=auth_user,
+                    files=uploaded_files,
                 )
+                # File response passthrough: return directly without JSON wrapping
+                if isinstance(response, Response):
+                    return response
                 return JSONResponse(
                     self._response_formatter.format_json(response),
                     status_code=200,

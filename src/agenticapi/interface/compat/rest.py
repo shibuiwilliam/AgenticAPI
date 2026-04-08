@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 if TYPE_CHECKING:
@@ -95,7 +95,7 @@ class RESTCompat:
             An async Starlette handler.
         """
 
-        async def handler(request: Request) -> JSONResponse:
+        async def handler(request: Request) -> Response:
             query = request.query_params.get("query", "")
             if not query:
                 # Build intent from all query params
@@ -114,6 +114,11 @@ class RESTCompat:
                     endpoint_name=name,
                     session_id=request.query_params.get("session_id"),
                 )
+                # File response passthrough
+                from starlette.responses import Response
+
+                if isinstance(response, Response):
+                    return response
                 from agenticapi.interface.response import ResponseFormatter
 
                 formatter = ResponseFormatter()
@@ -144,7 +149,7 @@ class RESTCompat:
             An async Starlette handler.
         """
 
-        async def handler(request: Request) -> JSONResponse:
+        async def handler(request: Request) -> Response:
             try:
                 body = await request.json()
             except Exception:
@@ -171,6 +176,11 @@ class RESTCompat:
                     endpoint_name=name,
                     session_id=session_id,
                 )
+                # File response passthrough
+                from starlette.responses import Response
+
+                if isinstance(response, Response):
+                    return response
                 from agenticapi.interface.response import ResponseFormatter
 
                 formatter = ResponseFormatter()

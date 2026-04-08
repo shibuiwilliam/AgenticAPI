@@ -1,14 +1,17 @@
-"""Agent response model and formatting.
+"""Agent response model, file results, and formatting.
 
 Provides the AgentResponse data class representing the result of an
-agent operation, and ResponseFormatter for serializing responses
-into different output formats.
+agent operation, FileResult for file download responses, and
+ResponseFormatter for serializing responses into different output formats.
 """
 
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import asdict, dataclass, field
 from typing import Any
+
+from starlette.responses import FileResponse, Response, StreamingResponse
 
 
 @dataclass(slots=True)
@@ -110,3 +113,83 @@ class ResponseFormatter:
             parts.append(f"Trace ID: {response.execution_trace_id}")
 
         return "\n".join(parts)
+
+
+@dataclass(slots=True)
+class FileResult:
+    """Convenience wrapper for returning files from agent endpoints.
+
+    Handlers return this instead of constructing Starlette responses
+    directly. The framework converts it to the appropriate response type
+    based on the ``content`` field:
+
+    - ``bytes`` → inline ``Response`` with the given media type
+    - ``str`` → ``FileResponse`` (interpreted as a file path)
+    - async/sync iterable → ``StreamingResponse``
+
+    Example:
+        @app.agent_endpoint(name="export")
+        async def export_csv(intent, context):
+            csv_data = "name,value\\nalice,42\\nbob,17"
+            return FileResult(
+                content=csv_data.encode(),
+                media_type="text/csv",
+                filename="export.csv",
+            )
+
+    Attributes:
+        content: File data — bytes, a file path string, or an iterable for streaming.
+        media_type: MIME type of the response (e.g., "application/pdf", "image/png").
+        filename: Suggested download filename. Sets the Content-Disposition header.
+        headers: Additional response headers.
+    """
+
+    content: bytes | str | Any
+    media_type: str = "application/octet-stream"
+    filename: str | None = None
+    headers: dict[str, str] | None = None
+
+    def to_response(self) -> Response:
+        """Convert to the appropriate Starlette response type.
+
+        Returns:
+            A Starlette Response, FileResponse, or StreamingResponse.
+        """
+        extra_headers: dict[str, str] = dict(self.headers) if self.headers else {}
+        if self.filename:
+            # Sanitize filename: remove path separators and escape quotes
+            safe_name = self.filename.replace("/", "_").replace("\\", "_").replace('"', '\\"')
+            extra_headers["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+
+        if isinstance(self.content, bytes):
+            return Response(
+                content=self.content,
+                media_type=self.media_type,
+                headers=extra_headers or None,
+            )
+
+        if isinstance(self.content, str):
+            # Resolve the path and ensure it's absolute (prevent path traversal)
+            import pathlib
+
+            resolved = pathlib.Path(self.content).resolve()
+            return FileResponse(
+                path=str(resolved),
+                media_type=self.media_type,
+                filename=self.filename,
+                headers=extra_headers or None,
+            )
+
+        if isinstance(self.content, (collections.abc.AsyncIterator, collections.abc.Iterator)):
+            return StreamingResponse(
+                content=self.content,
+                media_type=self.media_type,
+                headers=extra_headers or None,
+            )
+
+        # Fallback: treat as bytes-like
+        return Response(
+            content=bytes(self.content),
+            media_type=self.media_type,
+            headers=extra_headers or None,
+        )

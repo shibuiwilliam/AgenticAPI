@@ -1,6 +1,6 @@
 # AgenticAPI Examples
 
-Seven example apps demonstrating AgenticAPI features, from a minimal hello-world to a full-stack multi-feature composition. Each example is a standalone ASGI application that can be run with uvicorn.
+Nine example apps demonstrating AgenticAPI features, from a minimal hello-world to authentication and MCP integration. Each example is a standalone ASGI application that can be run with uvicorn.
 
 Every example automatically serves interactive API docs at `http://127.0.0.1:8000/docs` (Swagger UI) and `http://127.0.0.1:8000/redoc` (ReDoc).
 
@@ -15,6 +15,8 @@ Every example automatically serves interactive API docs at `http://127.0.0.1:800
 | [05_gemini_agent](#05-gemini-agent) | Support tickets | `GOOGLE_API_KEY` | Gemini, sessions |
 | [06_full_stack](#06-full-stack) | Warehouse | Configurable | All features: pipeline, ops, A2A, REST compat |
 | [07_comprehensive](#07-comprehensive) | DevOps/Incidents | Configurable | Multi-feature per-endpoint composition |
+| [08_mcp_agent](#08-mcp-agent) | Task tracker | No | MCP server: `enable_mcp`, `expose_as_mcp()` |
+| [09_auth_agent](#09-auth-agent) | Info service | No | Authentication: `APIKeyHeader`, `Authenticator` |
 
 ## Running Examples
 
@@ -28,7 +30,7 @@ agenticapi dev --app examples.01_hello_agent.app:app
 uvicorn examples.01_hello_agent.app:app --reload
 ```
 
-Examples 01 and 02 require no API keys. Examples 03-05 require a specific LLM provider's API key. Examples 06 and 07 let you choose a provider via `AGENTICAPI_LLM_PROVIDER` and fall back to direct-handler mode when no key is set.
+Examples 01, 02, 08, and 09 require no API keys. Examples 03-05 require a specific LLM provider's API key. Examples 06 and 07 let you choose a provider via `AGENTICAPI_LLM_PROVIDER` and fall back to direct-handler mode when no key is set. Example 08 requires `pip install agenticapi[mcp]`.
 
 ---
 
@@ -378,6 +380,100 @@ curl http://127.0.0.1:8000/health
 | `POST /agent/deployments.create` | Create deployments (approval required) | supervised |
 | `POST /agent/deployments.rollback` | Rollback deployments (SRE approval) | supervised |
 | `POST /agent/services.health` | Service health dashboard | auto |
+
+---
+
+## 08 MCP Agent
+
+A task tracker that exposes select endpoints as [MCP](https://modelcontextprotocol.io) tools, allowing LLM clients (Claude Desktop, Cursor, etc.) to invoke them via the Model Context Protocol. Demonstrates selective MCP exposure — only query and analytics endpoints become tools, while the admin endpoint remains internal.
+
+**Features demonstrated:** `enable_mcp=True` on endpoint decorators, `MCPCompat`, `expose_as_mcp()`, selective MCP exposure, streamable-http transport
+
+**Prerequisites:**
+
+```bash
+pip install agenticapi[mcp]
+```
+
+```bash
+uvicorn examples.08_mcp_agent.app:app --reload
+```
+
+```bash
+# Native intent API (always available)
+curl -X POST http://127.0.0.1:8000/agent/tasks.query \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Show all high-priority tasks"}'
+
+curl -X POST http://127.0.0.1:8000/agent/tasks.analytics \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "What is the completion rate?"}'
+
+# Admin endpoint (NOT exposed via MCP)
+curl -X POST http://127.0.0.1:8000/agent/tasks.admin \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Reset all task statuses"}'
+
+# Test MCP with the inspector
+npx @modelcontextprotocol/inspector http://127.0.0.1:8000/mcp
+```
+
+**Endpoints:**
+| Endpoint | Description | MCP Tool |
+|---|---|---|
+| `POST /agent/tasks.query` | Query and filter tasks | Yes |
+| `POST /agent/tasks.analytics` | Completion rates, workload | Yes |
+| `POST /agent/tasks.admin` | Admin operations | No |
+
+---
+
+## 09 Auth Agent
+
+An information service demonstrating HTTP authentication with API key-protected endpoints. Shows public endpoints alongside protected ones, with role-based access control in handlers.
+
+**Features demonstrated:** `APIKeyHeader` security scheme, `Authenticator` with verify function, per-endpoint `auth=` parameter, `AuthUser` in `AgentContext`, role-based authorization in handlers
+
+```bash
+uvicorn examples.09_auth_agent.app:app --reload
+```
+
+```bash
+# Public endpoint (no auth needed)
+curl -X POST http://127.0.0.1:8000/agent/info.public \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "What services are available?"}'
+
+# Protected endpoint WITHOUT auth (returns 401)
+curl -X POST http://127.0.0.1:8000/agent/info.protected \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Show user details"}'
+
+# Protected endpoint WITH valid API key
+curl -X POST http://127.0.0.1:8000/agent/info.protected \
+    -H "Content-Type: application/json" \
+    -H "X-API-Key: alice-key-001" \
+    -d '{"intent": "Show user details"}'
+
+# Admin endpoint (requires admin role)
+curl -X POST http://127.0.0.1:8000/agent/info.admin \
+    -H "Content-Type: application/json" \
+    -H "X-API-Key: admin-key-999" \
+    -d '{"intent": "Show all users"}'
+```
+
+**Valid API keys for testing:**
+| Key | User | Roles |
+|---|---|---|
+| `alice-key-001` | alice | operator |
+| `bob-key-002` | bob | operator |
+| `admin-key-999` | admin | admin, operator |
+
+**Endpoints:**
+| Endpoint | Description | Auth |
+|---|---|---|
+| `POST /agent/info.public` | Public information | None |
+| `POST /agent/info.protected` | User information | API key required |
+| `POST /agent/info.admin` | Admin operations | API key + admin role |
 
 ---
 

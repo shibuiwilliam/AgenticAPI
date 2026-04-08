@@ -12,6 +12,10 @@ install: ## Install the package with dev dependencies
 sync: ## Sync dependencies (uv)
 	uv sync --group dev
 
+.PHONY: pre-commit-install
+pre-commit-install: ## Install pre-commit hooks
+	uv run pre-commit install
+
 # ---------------------------------------------------------------------------
 # Code quality
 # ---------------------------------------------------------------------------
@@ -120,8 +124,24 @@ build: ## Build the package
 clean: ## Remove build artifacts and caches
 	rm -rf build/ dist/ *.egg-info src/*.egg-info
 	rm -rf .pytest_cache .mypy_cache .ruff_cache
-	rm -rf htmlcov .coverage
+	rm -rf htmlcov .coverage site/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Documentation
+# ---------------------------------------------------------------------------
+
+.PHONY: docs
+docs: ## Serve docs locally with live reload
+	mkdocs serve -a 127.0.0.1:8001
+
+.PHONY: docs-build
+docs-build: ## Build static docs site into site/
+	mkdocs build
+
+.PHONY: docs-deploy
+docs-deploy: ## Deploy docs to GitHub Pages
+	mkdocs gh-deploy --force
 
 # ---------------------------------------------------------------------------
 # Help

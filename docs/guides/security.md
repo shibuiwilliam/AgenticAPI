@@ -72,9 +72,32 @@ Resolution uses `asyncio.Lock` to prevent race conditions on concurrent `resolve
 
 Every execution is recorded as an `ExecutionTrace` containing intent, generated code, policy evaluations, execution result, duration, and errors. `AuditRecorder` has bounded storage (`max_traces=10000`) to prevent memory exhaustion.
 
+## HTTP Authentication
+
+AgenticAPI provides HTTP-level authentication via the `Authenticator` class, which combines a security scheme (credential extraction) with a verify function (credential validation). Auth runs **before body parsing** — invalid requests are rejected with HTTP 401 immediately.
+
+Available schemes: `APIKeyHeader`, `APIKeyQuery`, `HTTPBearer`, `HTTPBasic`.
+
+Auth can be configured per-endpoint, per-router, or app-wide. See the [Authentication Guide](authentication.md) for full details.
+
+**Files:** `security.py`
+
+## MCP Security
+
+When exposing endpoints via MCP (`enable_mcp=True`), the same harness pipeline applies — MCP tool calls go through intent parsing, policy evaluation, and sandbox execution. Only endpoints explicitly opted in are exposed. The MCP transport runs on streamable-http within the same ASGI server.
+
+## File Upload Security
+
+- **File size limit**: 50 MB per file (enforced at the ASGI handler level; returns HTTP 413 if exceeded)
+- **Content-Disposition sanitization**: Filenames in download headers have path separators stripped and quotes escaped to prevent header injection
+- **Path traversal protection**: File paths in `FileResult` are resolved to absolute paths via `pathlib.Path.resolve()` before being served
+- **In-memory processing**: Uploaded files are read entirely into memory — the 50 MB limit prevents OOM attacks
+
 ## Known Limitations (Phase 1)
 
 - `ProcessSandbox` provides process-level isolation, not kernel-level
 - AST analysis detects known patterns; sophisticated obfuscation may bypass it
 - Sessions, audit traces, and approval requests are in-memory (not persistent)
 - API keys must be provided via environment variables, never hardcoded
+- MCP transport does not yet support its own authentication layer (use endpoint-level `auth=` instead)
+- No per-endpoint Content-Type allowlisting for uploads (accept all MIME types)

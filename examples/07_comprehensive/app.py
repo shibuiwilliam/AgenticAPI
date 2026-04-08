@@ -17,6 +17,7 @@ Each endpoint exercises a rich combination of features:
     -> AuditRecorder (full trace)
     -> SessionManager (multi-turn incident triage)
     -> IntentScope (scoped intent filtering)
+    -> AgentTasks (background: dispatch alert + record metric)
     -> All 4 policy types
 
   incidents.investigate
@@ -35,6 +36,7 @@ Each endpoint exercises a rich combination of features:
     -> HttpClientTool (notify CI/CD)
     -> DatabaseTool (record deployment)
     -> All 4 policy types + sandbox monitors/validators
+    -> AgentTasks (background: enqueue job + notify Slack)
     -> AuditRecorder
 
   deployments.rollback
@@ -52,6 +54,11 @@ Each endpoint exercises a rich combination of features:
     -> DatabaseTool + HttpClientTool + CacheTool
     -> AuditRecorder
     -> REST compatibility layer
+
+Additionally, the app demonstrates:
+  - ASGI middleware: RequestTimingMiddleware (adds X-Process-Time header to every response)
+  - AgentTasks: background tasks that run after the response is sent
+    (alert dispatch in incidents.report, deployment job enqueue in deployments.create)
 
 LLM provider selection (via AGENTICAPI_LLM_PROVIDER env var):
     export AGENTICAPI_LLM_PROVIDER=openai    # default
@@ -96,9 +103,13 @@ Test with curl:
 
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+
+import structlog
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from agenticapi.app import AgenticApp
 from agenticapi.application.pipeline import DynamicPipeline, PipelineStage
@@ -129,6 +140,7 @@ from agenticapi.runtime.tools.registry import ToolRegistry
 from agenticapi.types import AutonomyLevel, Severity
 
 if TYPE_CHECKING:
+    from agenticapi.interface.tasks import AgentTasks
     from agenticapi.runtime.context import AgentContext
 
 
@@ -221,6 +233,63 @@ async def mock_db_execute(query: str, params: dict[str, Any] | None = None) -> l
                 all_logs.append({**entry, "service": svc})
         return all_logs
     return []
+
+
+bg_logger = structlog.get_logger("background_tasks")
+
+
+# ============================================================================
+# 1b. MIDDLEWARE — request timing (ASGI-level, wraps every request)
+# ============================================================================
+
+
+class RequestTimingMiddleware(BaseHTTPMiddleware):
+    """Add X-Process-Time header to every response.
+
+    Demonstrates ASGI middleware integration via ``app.add_middleware()``.
+    This runs at the Starlette level, wrapping all routes including
+    /agent/*, /rest/*, /health, and /docs.
+    """
+
+    async def dispatch(self, request: Any, call_next: Any) -> Any:
+        start = time.monotonic()
+        response = await call_next(request)
+        elapsed_ms = (time.monotonic() - start) * 1000
+        response.headers["X-Process-Time"] = f"{elapsed_ms:.1f}ms"
+        return response
+
+
+# ============================================================================
+# 1c. BACKGROUND TASK FUNCTIONS — run after response is sent
+# ============================================================================
+
+
+async def dispatch_alert(incident_id: str, severity: str, service: str) -> None:
+    """Background: dispatch an alert to on-call engineers.
+
+    In production this would call PagerDuty/Slack. Here we just log.
+    """
+    bg_logger.info(
+        "alert_dispatched",
+        incident_id=incident_id,
+        severity=severity,
+        service=service,
+    )
+
+
+async def record_incident_metric(incident_id: str, severity: str) -> None:
+    """Background: record the incident in a metrics system."""
+    bg_logger.info("incident_metric_recorded", incident_id=incident_id, severity=severity)
+
+
+async def enqueue_deployment_job(deploy_id: str, service: str, version: str) -> None:
+    """Background: enqueue a deployment job in the CI/CD pipeline."""
+    bg_logger.info("deployment_job_enqueued", deploy_id=deploy_id, service=service, version=version)
+
+
+async def notify_slack_channel(message: str) -> None:
+    """Background: send a notification to a Slack channel."""
+    bg_logger.info("slack_notification_sent", message=message)
 
 
 # ============================================================================
@@ -654,7 +723,7 @@ service_router = AgentRouter(prefix="services", tags=["services"])
     ),
     autonomy_level="supervised",
 )
-async def incident_report(intent: Intent, context: AgentContext) -> AgentResponse:
+async def incident_report(intent: Intent, context: AgentContext, tasks: AgentTasks) -> AgentResponse:
     """Report an incident with full feature composition.
 
     Features exercised:
@@ -666,6 +735,7 @@ async def incident_report(intent: Intent, context: AgentContext) -> AgentRespons
     6. ApprovalWorkflow: critical incidents surface approval requirement
     7. AuditRecorder: record full trace
     8. Session: multi-turn incident triage
+    9. AgentTasks: background alert dispatch + metric recording
     """
     # 1. Pipeline: auth + enrichment + cache check
     pipeline_result = await pipeline.execute(
@@ -727,7 +797,13 @@ async def incident_report(intent: Intent, context: AgentContext) -> AgentRespons
         "alert_queued": not is_critical,  # Critical needs approval first
     }
 
-    # 8. Critical incidents need approval before action
+    # 8. Schedule background tasks (run after response is sent)
+    tasks.add_task(record_incident_metric, incident_id=incident_id, severity=severity)
+    if not is_critical:
+        # Non-critical: dispatch alert immediately in background
+        tasks.add_task(dispatch_alert, incident_id=incident_id, severity=severity, service=service_name or "unknown")
+
+    # 9. Critical incidents need approval before action
     if is_critical:
         return AgentResponse(
             result=response_data,
@@ -924,7 +1000,7 @@ async def incident_investigate(intent: Intent, context: AgentContext) -> AgentRe
     ),
     autonomy_level="supervised",
 )
-async def deployment_create(intent: Intent, context: AgentContext) -> AgentResponse:
+async def deployment_create(intent: Intent, context: AgentContext, tasks: AgentTasks) -> AgentResponse:
     """Create a deployment with full safety composition.
 
     Features exercised:
@@ -936,6 +1012,7 @@ async def deployment_create(intent: Intent, context: AgentContext) -> AgentRespo
     6. All 4 policy types enforced via harness
     7. Sandbox monitors and validators
     8. AuditRecorder: full deployment trace
+    9. AgentTasks: background job enqueue + Slack notification
     """
     # 1. Pipeline: auth + validation + dependency check
     pipeline_result = await pipeline.execute(
@@ -991,6 +1068,18 @@ async def deployment_create(intent: Intent, context: AgentContext) -> AgentRespo
         risk_factors.append("No risk factors identified")
 
     trace_id = f"trace-{uuid.uuid4().hex[:8]}"
+
+    # 8. Schedule background tasks (run after response is sent)
+    tasks.add_task(
+        enqueue_deployment_job,
+        deploy_id=deploy_id,
+        service=target_service,
+        version=target_version,
+    )
+    tasks.add_task(
+        notify_slack_channel,
+        message=f"Deployment {deploy_id}: {target_service} v{target_version} to {target_env} (risk: {risk_level})",
+    )
 
     return AgentResponse(
         result={
@@ -1322,6 +1411,9 @@ app = AgenticApp(
 app.include_router(incident_router)
 app.include_router(deployment_router)
 app.include_router(service_router)
+
+# Add ASGI middleware — wraps every request/response
+app.add_middleware(RequestTimingMiddleware)
 
 # Register ops agent
 app.register_ops_agent(platform_monitor)

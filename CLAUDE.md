@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-AgenticAPI is a Python OSS framework that natively integrates coding agents into web applications. Built on Starlette/ASGI, it provides agent endpoints, harness engineering (policy enforcement, sandboxing, approval workflows), and multi-LLM support.
+AgenticAPI is a Python OSS framework that natively integrates coding agents into web applications. Built on Starlette/ASGI, it provides agent endpoints, harness engineering (policy enforcement, sandboxing, approval workflows), multi-LLM support, authentication, MCP compatibility, and auto-generated OpenAPI docs.
 
 **In a nutshell**: FastAPI is for type-safe REST APIs. AgenticAPI is for harnessed agent APIs.
 
-**Current status**: Phase 1 v0.1.0 complete. ~530 tests, 88% coverage, 75 source files.
+**Current status**: Phase 1 v0.1.0. 80 source files, 10,375 lines of code, 666 tests, 89% coverage, 10 examples.
 
 ---
 
@@ -17,6 +17,7 @@ AgenticAPI is a Python OSS framework that natively integrates coding agents into
 ```bash
 uv sync --group dev              # Install all dependencies
 uv run agenticapi version        # Verify CLI works
+pip install -e ".[mcp]"          # Optional: MCP support
 ```
 
 ### Testing
@@ -25,7 +26,8 @@ uv run agenticapi version        # Verify CLI works
 uv run pytest                                    # All tests
 uv run pytest --ignore=tests/benchmarks -q       # Skip benchmarks (faster)
 uv run pytest tests/unit/harness/ -xvs           # Specific directory
-uv run pytest --cov=src/agenticapi               # With coverage
+uv run pytest --cov=src/agenticapi               # With coverage (89%)
+uv run pytest tests/e2e/ -v                      # E2E tests for all examples
 uv run pytest tests/benchmarks/                  # Benchmarks only
 uv run pytest -m "not requires_llm"              # Skip LLM-dependent tests
 ```
@@ -36,10 +38,18 @@ uv run pytest -m "not requires_llm"              # Skip LLM-dependent tests
 uv run ruff format src/ tests/                   # Format
 uv run ruff check src/ tests/                    # Lint
 uv run ruff check --fix src/ tests/              # Lint + auto-fix
-uv run mypy src/agenticapi/                      # Type check
+uv run mypy src/agenticapi/                      # Type check (strict)
 
 # Full CI check:
 uv run ruff format --check src/ tests/ && uv run ruff check src/ tests/ && uv run mypy src/agenticapi/ && uv run pytest --ignore=tests/benchmarks
+```
+
+### Documentation
+
+```bash
+mkdocs serve -a 127.0.0.1:8001   # Live-reloading docs
+mkdocs build                      # Static site in site/
+mkdocs gh-deploy --force          # Deploy to GitHub Pages
 ```
 
 ### Running Examples
@@ -47,6 +57,8 @@ uv run ruff format --check src/ tests/ && uv run ruff check src/ tests/ && uv ru
 ```bash
 agenticapi dev --app examples.01_hello_agent.app:app          # No LLM needed
 agenticapi dev --app examples.06_full_stack.app:app           # Full features
+agenticapi dev --app examples.08_mcp_agent.app:app            # MCP server
+agenticapi dev --app examples.09_auth_agent.app:app           # Authentication
 agenticapi console --app examples.02_ecommerce.app:app        # Interactive REPL
 ```
 
@@ -54,7 +66,7 @@ agenticapi console --app examples.02_ecommerce.app:app        # Interactive REPL
 
 ## Architecture
 
-See [docs/architecture.md](docs/architecture.md) for the full architecture document.
+See [development/architecture.md](development/architecture.md) for the full architecture document.
 
 ### Layer Structure
 
@@ -62,21 +74,38 @@ See [docs/architecture.md](docs/architecture.md) for the full architecture docum
 Interface Layer -> Harness Engine -> Agent Runtime -> Sandbox -> Response
 ```
 
-### Request Flow (simplified)
+### Request Flow
 
 ```
-POST /agent/{name} {"intent": "..."} 
+POST /agent/{name} {"intent": "..."}
+  -> Authentication (if auth= configured)
   -> IntentParser.parse() -> Intent
   -> IntentScope check
-  -> [LLM path]: CodeGenerator -> PolicyEvaluator -> StaticAnalysis -> ApprovalCheck -> ProcessSandbox -> Monitors -> Validators -> AuditRecorder
+  -> [LLM path]: CodeGenerator -> PolicyEvaluator -> StaticAnalysis
+       -> ApprovalCheck -> ProcessSandbox -> Monitors -> Validators
+       -> AuditRecorder -> AgentResponse
   -> [Handler path]: handler(intent, context) -> AgentResponse
+  -> AgentTasks (background tasks run after response)
 ```
+
+### Auto-Registered Routes
+
+Every `AgenticApp` automatically provides:
+
+| Route | Method | Description |
+|---|---|---|
+| `/agent/{name}` | POST | Agent endpoint (one per registered handler) |
+| `/health` | GET | Health check with version, endpoints, ops agent status |
+| `/capabilities` | GET | Structured metadata for all endpoints |
+| `/openapi.json` | GET | OpenAPI 3.1.0 schema |
+| `/docs` | GET | Swagger UI |
+| `/redoc` | GET | ReDoc UI |
 
 ---
 
 ## Module Reference
 
-See [docs/modules.md](docs/modules.md) for the complete module reference.
+See [development/modules.md](development/modules.md) for the complete module reference.
 
 ### Key Types
 
@@ -86,11 +115,61 @@ See [docs/modules.md](docs/modules.md) for the complete module reference.
 | `AgentRouter` | `routing.py` | Endpoint grouping (like APIRouter) |
 | `Intent` | `interface/intent.py` | Parsed user request |
 | `AgentResponse` | `interface/response.py` | Agent output with result, reasoning, trace |
+| `AgentTasks` | `interface/tasks.py` | Background tasks (like FastAPI's BackgroundTasks) |
 | `HarnessEngine` | `harness/engine.py` | Safety pipeline orchestrator |
 | `CodePolicy` | `harness/policy/code_policy.py` | Import/eval/exec restrictions |
+| `DataPolicy` | `harness/policy/data_policy.py` | SQL table/column access control |
+| `ResourcePolicy` | `harness/policy/resource_policy.py` | CPU/memory/time limits |
+| `RuntimePolicy` | `harness/policy/runtime_policy.py` | AST complexity limits |
 | `ProcessSandbox` | `harness/sandbox/process.py` | Isolated code execution |
+| `ApprovalWorkflow` | `harness/approval/workflow.py` | Human-in-the-loop approval |
+| `AuditRecorder` | `harness/audit/recorder.py` | Execution trace recording |
 | `LLMBackend` | `runtime/llm/base.py` | Protocol for LLM providers |
 | `Tool` | `runtime/tools/base.py` | Protocol for agent tools |
+| `DynamicPipeline` | `application/pipeline.py` | Middleware-like stage composition |
+| `OpsAgent` | `ops/base.py` | Operational agent base class |
+| `Authenticator` | `security.py` | Auth scheme + verify function |
+| `APIKeyHeader` | `security.py` | Extract API key from header |
+| `HTTPBearer` | `security.py` | Extract Bearer token |
+| `FileResult` | `interface/response.py` | File download helper (bytes, path, or streaming) |
+| `UploadFile` | `interface/upload.py` | Uploaded file data (filename, content, size) |
+| `UploadedFiles` | `interface/upload.py` | Handler param type for auto-injected uploaded files |
+| `MCPCompat` | `interface/compat/mcp.py` | MCP server (`pip install agenticapi[mcp]`) |
+| `RESTCompat` | `interface/compat/rest.py` | REST route generation |
+
+### AgenticApp Constructor
+
+```python
+AgenticApp(
+    title="AgenticAPI",
+    version="0.1.0",
+    description="",
+    harness=None,           # HarnessEngine
+    llm=None,               # LLMBackend
+    tools=None,             # ToolRegistry
+    middleware=None,         # list[Middleware]
+    auth=None,              # Authenticator (app-wide default)
+    docs_url="/docs",       # None to disable
+    redoc_url="/redoc",     # None to disable
+    openapi_url="/openapi.json",  # None to disable all docs
+)
+```
+
+### Middleware (ASGI-level)
+
+```python
+from starlette.middleware.cors import CORSMiddleware
+
+app = AgenticApp(title="My Service")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+Middleware wraps the entire ASGI app. For agent-specific request enrichment, use `DynamicPipeline` instead.
 
 ---
 
@@ -129,6 +208,7 @@ def _private_method():  # _prefix for private
 ### Exceptions
 
 - User-visible errors -> `InterfaceError` (mapped to HTTP 4xx)
+- Authentication failures -> `AuthenticationError` (401), `AuthorizationError` (403)
 - Internal control flow -> `HarnessError` (handled by harness)
 - Unexpected errors -> `AgentRuntimeError` (logged, incident-tracked)
 - **Never swallow exceptions** (`except Exception: pass` is forbidden)
@@ -148,7 +228,28 @@ logger.error("execution_failed", error=str(e), trace_id=ctx.trace_id)
 
 ## Security
 
-See [docs/security.md](docs/security.md) for the full security model.
+See [development/security.md](development/security.md) for the full security model.
+
+### Authentication
+
+```python
+from agenticapi.security import APIKeyHeader, Authenticator, AuthUser
+
+api_key = APIKeyHeader(name="X-API-Key")
+
+async def verify(credentials):
+    if credentials.credentials == "secret":
+        return AuthUser(user_id="u1", username="alice", roles=["admin"])
+    return None
+
+auth = Authenticator(scheme=api_key, verify=verify)
+
+# Per-endpoint
+@app.agent_endpoint(name="orders", auth=auth)
+
+# Or app-wide default
+app = AgenticApp(auth=auth)
+```
 
 ### Defense in Depth (7 layers)
 
@@ -160,19 +261,11 @@ See [docs/security.md](docs/security.md) for the full security model.
 6. **Post-execution** — resource monitors, output validators
 7. **Audit trail** — bounded ExecutionTrace recording
 
-### Key Security Patterns
-
-- SQL write detection strips comments before keyword check
-- Static analysis handles both `eval()` and `builtins.eval()` (attribute access)
-- DataPolicy detects backtick-quoted and double-quoted identifiers
-- Sandbox namespace pre-populates `data` dict (tools can't be called directly)
-- LLM backends have configurable `timeout` parameter
-
 ---
 
 ## Testing
 
-See [docs/testing.md](docs/testing.md) for the full testing guide.
+See [development/testing.md](development/testing.md) for the full testing guide.
 
 ### Test-First Development
 
@@ -197,7 +290,7 @@ See [docs/testing.md](docs/testing.md) for the full testing guide.
 
 ## Examples
 
-See [docs/examples.md](docs/examples.md) for the full examples guide.
+See [examples/README.md](examples/README.md) for the full examples guide.
 
 | Example | LLM | Features |
 |---|---|---|
@@ -206,7 +299,11 @@ See [docs/examples.md](docs/examples.md) for the full examples guide.
 | `03_openai_agent` | OpenAI GPT | Full harness pipeline |
 | `04_anthropic_agent` | Anthropic Claude | Policies, ResourcePolicy |
 | `05_gemini_agent` | Google Gemini | Sessions, CacheTool |
-| `06_full_stack` | Configurable | Everything: pipeline, ops, REST compat, monitors |
+| `06_full_stack` | Configurable | Everything: pipeline, ops, A2A, REST compat, monitors |
+| `07_comprehensive` | Configurable | Multi-feature composition per endpoint (DevOps platform) |
+| `08_mcp_agent` | None | MCP server: `enable_mcp=True`, `expose_as_mcp()` |
+| `09_auth_agent` | None | Authentication: `APIKeyHeader`, `Authenticator`, `auth=` |
+| `10_file_handling` | None | File upload/download: `UploadedFiles`, `FileResult`, streaming |
 
 ---
 
@@ -216,37 +313,62 @@ See [docs/examples.md](docs/examples.md) for the full examples guide.
 
 1. Create `src/agenticapi/harness/policy/my_policy.py` inheriting from `Policy` (in `base.py`)
 2. Implement `evaluate(*, code, intent_action, intent_domain, **kwargs) -> PolicyResult`
-3. Export from `harness/policy/__init__.py`
-4. Export from `harness/__init__.py`
-5. Add tests in `tests/unit/harness/test_my_policy.py`
-6. Optionally export from `src/agenticapi/__init__.py` if it's a public API
+3. Export from `harness/policy/__init__.py` and `harness/__init__.py`
+4. Add tests in `tests/unit/harness/test_my_policy.py`
+5. Optionally export from `src/agenticapi/__init__.py` if public API
 
 ### Adding a New Tool
 
-1. Create `src/agenticapi/runtime/tools/my_tool.py` implementing the `Tool` protocol (in `base.py`)
-2. Implement `definition` property returning `ToolDefinition` and `async invoke(**kwargs)` method
+1. Create `src/agenticapi/runtime/tools/my_tool.py` implementing the `Tool` protocol
+2. Implement `definition` property -> `ToolDefinition` and `async invoke(**kwargs)`
 3. Export from `runtime/tools/__init__.py`
 4. Add tests in `tests/unit/runtime/test_my_tool.py`
 5. Reference: `database.py` for the standard pattern
 
 ### Adding a New LLM Backend
 
-1. Create `src/agenticapi/runtime/llm/my_backend.py` implementing the `LLMBackend` protocol (in `base.py`)
-2. Implement `generate(prompt) -> LLMResponse`, `generate_stream(prompt) -> AsyncIterator[LLMChunk]`, `model_name` property
-3. Constructor should accept `api_key`, `model`, `max_tokens`, `timeout` parameters
+1. Create `src/agenticapi/runtime/llm/my_backend.py` implementing `LLMBackend` protocol
+2. Implement `generate()`, `generate_stream()`, `model_name` property
+3. Constructor: accept `api_key`, `model`, `max_tokens`, `timeout` parameters
 4. Read API key from env var with explicit parameter override
 5. Export from `runtime/llm/__init__.py`
 6. Add tests in `tests/unit/runtime/test_my_backend.py`
-7. Reference: `anthropic.py`, `openai.py`, `gemini.py` for patterns
+7. Reference: `anthropic.py`, `openai.py`, `gemini.py`
 
 ### Adding a New Example
 
 1. Create `examples/NN_my_example/app.py` (no `__init__.py` needed)
 2. Include docstring with Prerequisites, Run command, and curl test commands
 3. Use `TYPE_CHECKING` for `AgentContext` import
-4. Use broad `IntentScope` wildcards (`*.read`, `*.analyze`, `*.clarify`) — LLMs may classify domains unpredictably
+4. Use broad `IntentScope` wildcards (`*.read`, `*.analyze`) — LLMs may classify domains unpredictably
 5. Pass `tools=tools` to `AgenticApp()` if using tools with LLM
-6. Update `README.md` Examples section and `docs/examples.md`
+6. Add E2E tests in `tests/e2e/test_examples.py`
+7. Update `examples/README.md`
+
+### Exposing Endpoints via MCP
+
+1. Install: `pip install agenticapi[mcp]`
+2. Mark endpoints: `@app.agent_endpoint(name="search", enable_mcp=True)`
+3. Mount: `app.add_routes(expose_as_mcp(app))`
+4. Test: `npx @modelcontextprotocol/inspector http://localhost:8000/mcp`
+5. Reference: `examples/08_mcp_agent/app.py`
+
+### Adding Authentication
+
+1. Choose a scheme: `APIKeyHeader`, `APIKeyQuery`, `HTTPBearer`, or `HTTPBasic`
+2. Write a `verify` function: `async (AuthCredentials) -> AuthUser | None`
+3. Create `Authenticator(scheme=..., verify=...)`
+4. Attach per-endpoint: `@app.agent_endpoint(name="x", auth=auth)` or app-wide: `AgenticApp(auth=auth)`
+5. Access user in handler via `context.auth_user`
+6. Reference: `examples/09_auth_agent/app.py`
+
+### Adding File Upload/Download
+
+1. **Upload**: Add `UploadedFiles` parameter to handler -> client sends `multipart/form-data`
+2. **Download**: Return `FileResult(content=..., media_type=..., filename=...)` from handler
+3. `FileResult.content` accepts `bytes` (inline), `str` (file path), or async iterable (streaming)
+4. Handlers can also return a raw Starlette `Response` for full control
+5. Reference: `examples/10_file_handling/app.py`
 
 ---
 

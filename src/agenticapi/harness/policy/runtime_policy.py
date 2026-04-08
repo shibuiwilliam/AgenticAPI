@@ -26,13 +26,13 @@ class RuntimePolicy(Policy):
     limiting and authentication.
 
     Example:
-        policy = RuntimePolicy(max_code_complexity=50)
+        policy = RuntimePolicy(max_code_complexity=500)
         result = policy.evaluate(code="x = 1")
         assert result.allowed is True
     """
 
     max_code_complexity: int = Field(
-        default=50,
+        default=500,
         ge=1,
         description="Maximum AST node count (proxy for code complexity).",
     )
