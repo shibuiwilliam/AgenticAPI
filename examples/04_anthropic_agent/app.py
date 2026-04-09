@@ -1,10 +1,10 @@
-"""Anthropic (Claude) powered agent example with harness safety.
+"""Anthropic (Claude) powered agent example with harness safety and custom prompts.
 
 Demonstrates:
 - AnthropicBackend for LLM-powered intent parsing and code generation
+- Custom prompts: calling Claude directly with endpoint-specific system prompts
 - HarnessEngine with CodePolicy, DataPolicy, and ResourcePolicy
 - DatabaseTool for querying a product catalogue
-- Full pipeline: intent -> code generation -> policy check -> sandbox -> response
 
 Prerequisites:
     export ANTHROPIC_API_KEY="sk-ant-..."
@@ -16,15 +16,20 @@ Or using the CLI:
     agenticapi dev --app examples.04_anthropic_agent.app:app
 
 Test with curl:
-    # Search products
+    # Search products (handler-based)
     curl -X POST http://127.0.0.1:8000/agent/products.search \
         -H "Content-Type: application/json" \
         -d '{"intent": "Show me all electronics under 50000 yen"}'
 
-    # Get inventory summary
-    curl -X POST http://127.0.0.1:8000/agent/products.inventory \
+    # LLM-powered product description (custom prompt)
+    curl -X POST http://127.0.0.1:8000/agent/products.describe \
         -H "Content-Type: application/json" \
-        -d '{"intent": "Which products are low in stock?"}'
+        -d '{"intent": "Write a marketing description for the Noise-Cancelling Headphones"}'
+
+    # LLM-powered gift recommendation (custom prompt)
+    curl -X POST http://127.0.0.1:8000/agent/products.recommend \
+        -H "Content-Type: application/json" \
+        -d '{"intent": "Suggest a gift for a software developer under 20000 yen"}'
 
     # Health check
     curl http://127.0.0.1:8000/health
@@ -32,6 +37,7 @@ Test with curl:
 
 from __future__ import annotations
 
+import json as _json
 from typing import TYPE_CHECKING, Any
 
 from agenticapi.app import AgenticApp
@@ -43,6 +49,7 @@ from agenticapi.interface.intent import Intent, IntentScope
 from agenticapi.interface.response import AgentResponse
 from agenticapi.routing import AgentRouter
 from agenticapi.runtime.llm.anthropic import AnthropicBackend
+from agenticapi.runtime.llm.base import LLMMessage, LLMPrompt
 from agenticapi.runtime.tools.database import DatabaseTool
 from agenticapi.runtime.tools.registry import ToolRegistry
 
@@ -198,6 +205,63 @@ async def product_inventory(intent: Intent, context: AgentContext) -> AgentRespo
         },
         reasoning=f"Inventory summary with {len(low_stock)} low-stock alerts (threshold: {low_stock_threshold})",
     )
+
+
+# ---------------------------------------------------------------------------
+# Custom prompt endpoints — call Claude directly with specific prompts
+# ---------------------------------------------------------------------------
+
+
+@products_router.agent_endpoint(
+    name="describe",
+    description="LLM-powered marketing description for a product",
+    intent_scope=IntentScope(allowed_intents=["*"]),
+    autonomy_level="manual",  # bypass harness — handler calls LLM directly
+)
+async def product_describe(intent: Intent, context: AgentContext) -> dict[str, Any]:
+    """Call Claude with a custom prompt to generate a product description."""
+    catalog = _json.dumps(PRODUCTS, indent=2)
+    prompt = LLMPrompt(
+        system=(
+            "You are a creative marketing copywriter. Given a product catalogue, "
+            "write a compelling 2-3 sentence marketing description for the product "
+            "the user asks about. Be enthusiastic but factual. Include the price."
+        ),
+        messages=[
+            LLMMessage(role="user", content=f"Catalogue:\n{catalog}\n\nRequest: {intent.raw}"),
+        ],
+        temperature=0.7,
+        max_tokens=256,
+    )
+
+    response = await llm.generate(prompt)
+    return {"description": response.content, "model": llm.model_name}
+
+
+@products_router.agent_endpoint(
+    name="recommend",
+    description="LLM-powered gift/purchase recommendation",
+    intent_scope=IntentScope(allowed_intents=["*"]),
+    autonomy_level="manual",  # bypass harness — handler calls LLM directly
+)
+async def product_recommend(intent: Intent, context: AgentContext) -> dict[str, Any]:
+    """Call Claude with a custom prompt to recommend products."""
+    catalog = _json.dumps(PRODUCTS, indent=2)
+    prompt = LLMPrompt(
+        system=(
+            "You are a helpful shopping assistant. Given a product catalogue, "
+            "recommend 1-3 products that best match what the user is looking for. "
+            "Explain why each is a good choice. Be concise and friendly."
+        ),
+        messages=[
+            LLMMessage(role="user", content=f"Catalogue:\n{catalog}\n\nRequest: {intent.raw}"),
+        ],
+        temperature=0.5,
+        max_tokens=512,
+    )
+
+    response = await llm.generate(prompt)
+    return {"recommendation": response.content, "model": llm.model_name}
 
 
 # ---------------------------------------------------------------------------

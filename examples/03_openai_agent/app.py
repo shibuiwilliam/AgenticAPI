@@ -1,11 +1,11 @@
-"""OpenAI-powered agent example with code generation and harness safety.
+"""OpenAI-powered agent example with code generation and custom prompts.
 
 Demonstrates:
 - OpenAIBackend for LLM-powered code generation
+- Custom prompts: calling the LLM directly with endpoint-specific system prompts
 - HarnessEngine with CodePolicy and DataPolicy
 - DatabaseTool and CacheTool for agent-generated code
 - ApprovalWorkflow for write operations
-- Full pipeline: intent -> code generation -> policy check -> sandbox -> response
 
 Prerequisites:
     export OPENAI_API_KEY="sk-..."
@@ -17,15 +17,20 @@ Or using the CLI:
     agenticapi dev --app examples.03_openai_agent.app:app
 
 Test with curl:
-    # Read query (auto-approved)
+    # Read query (handler-based)
     curl -X POST http://127.0.0.1:8000/agent/tasks.query \
         -H "Content-Type: application/json" \
         -d '{"intent": "Show me all high-priority tasks"}'
 
-    # Analytics query
-    curl -X POST http://127.0.0.1:8000/agent/tasks.analytics \
+    # LLM-powered summarize (custom prompt)
+    curl -X POST http://127.0.0.1:8000/agent/tasks.summarize \
         -H "Content-Type: application/json" \
-        -d '{"intent": "What is the completion rate by assignee?"}'
+        -d '{"intent": "Give me a brief status update on the project"}'
+
+    # LLM-powered prioritize (custom prompt)
+    curl -X POST http://127.0.0.1:8000/agent/tasks.prioritize \
+        -H "Content-Type: application/json" \
+        -d '{"intent": "What should Alice work on next?"}'
 
     # Health check
     curl http://127.0.0.1:8000/health
@@ -33,6 +38,7 @@ Test with curl:
 
 from __future__ import annotations
 
+import json as _json
 import os
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +51,7 @@ from agenticapi.harness.policy.data_policy import DataPolicy
 from agenticapi.interface.intent import Intent, IntentScope
 from agenticapi.interface.response import AgentResponse
 from agenticapi.routing import AgentRouter
+from agenticapi.runtime.llm.base import LLMMessage, LLMPrompt
 from agenticapi.runtime.llm.openai import OpenAIBackend
 from agenticapi.runtime.tools.cache import CacheTool
 from agenticapi.runtime.tools.database import DatabaseTool
@@ -245,6 +252,69 @@ async def task_update(intent: Intent, context: AgentContext) -> AgentResponse:
         status="pending_review",
         reasoning="Write operations on tasks require project lead approval",
     )
+
+
+# ---------------------------------------------------------------------------
+# Custom prompt endpoints — call the LLM directly with specific prompts
+# ---------------------------------------------------------------------------
+
+
+@tasks_router.agent_endpoint(
+    name="summarize",
+    description="LLM-powered project summary using a custom prompt",
+    intent_scope=IntentScope(allowed_intents=["*"]),
+    autonomy_level="manual",  # bypass harness — handler calls LLM directly
+)
+async def task_summarize(intent: Intent, context: AgentContext) -> dict[str, Any]:
+    """Call OpenAI with a custom summarization prompt and task data."""
+    if llm is None:
+        return {"error": "OPENAI_API_KEY not set"}
+
+    task_data = _json.dumps(TASKS, indent=2)
+    prompt = LLMPrompt(
+        system=(
+            "You are a project manager assistant. Given a list of tasks, "
+            "write a brief 2-3 sentence status update for the team. "
+            "Mention how many tasks are done, in progress, and pending."
+        ),
+        messages=[
+            LLMMessage(role="user", content=f"Tasks:\n{task_data}\n\nRequest: {intent.raw}"),
+        ],
+        temperature=0.3,
+        max_tokens=256,
+    )
+
+    response = await llm.generate(prompt)
+    return {"summary": response.content, "model": llm.model_name}
+
+
+@tasks_router.agent_endpoint(
+    name="prioritize",
+    description="LLM-powered task prioritization advice using a custom prompt",
+    intent_scope=IntentScope(allowed_intents=["*"]),
+    autonomy_level="manual",  # bypass harness — handler calls LLM directly
+)
+async def task_prioritize(intent: Intent, context: AgentContext) -> dict[str, Any]:
+    """Call OpenAI with a custom prioritization prompt."""
+    if llm is None:
+        return {"error": "OPENAI_API_KEY not set"}
+
+    task_data = _json.dumps(TASKS, indent=2)
+    prompt = LLMPrompt(
+        system=(
+            "You are a project prioritization expert. Given a list of tasks, "
+            "recommend which task should be worked on next and why. "
+            "Consider priority, current status, and dependencies. Be concise."
+        ),
+        messages=[
+            LLMMessage(role="user", content=f"Tasks:\n{task_data}\n\nRequest: {intent.raw}"),
+        ],
+        temperature=0.2,
+        max_tokens=256,
+    )
+
+    response = await llm.generate(prompt)
+    return {"recommendation": response.content, "model": llm.model_name}
 
 
 # ---------------------------------------------------------------------------

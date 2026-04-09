@@ -215,10 +215,67 @@ Any Starlette `Response` subclass is passed through to the client without JSON w
 
 ### Backward Compatibility
 
-Handlers that return dicts or `AgentResponse` objects continue to produce JSON responses as before. The file response passthrough only activates when the handler returns a `Response`, `FileResponse`, `StreamingResponse`, or `FileResult`.
+Handlers that return dicts or `AgentResponse` objects continue to produce JSON responses as before. The file response passthrough only activates when the handler returns a `Response`, `FileResponse`, `StreamingResponse`, `FileResult`, `HTMLResult`, or `PlainTextResult`.
 
 ---
 
-## Example
+## HTML and Plain Text Responses
 
-See [`examples/10_file_handling/`](https://github.com/shibuiwilliam/AgenticAPI/tree/main/examples/10_file_handling) for a complete working example with upload, CSV download, and streaming endpoints.
+In addition to `FileResult`, two convenience types are provided for common non-JSON response types:
+
+### HTMLResult
+
+Return HTML pages directly from agent endpoints:
+
+```python
+from agenticapi.interface.response import HTMLResult
+
+@app.agent_endpoint(name="dashboard")
+async def dashboard(intent, context):
+    return HTMLResult(content="<h1>Dashboard</h1><p>Welcome!</p>")
+```
+
+The response has `Content-Type: text/html`. Supports optional `status_code` and `headers`.
+
+### PlainTextResult
+
+Return plain text responses:
+
+```python
+from agenticapi.interface.response import PlainTextResult
+
+@app.agent_endpoint(name="status")
+async def status(intent, context):
+    return PlainTextResult(content="Status: OK\nUptime: 42h")
+```
+
+The response has `Content-Type: text/plain`. Supports optional `status_code` and `headers`.
+
+### Mixing Response Types
+
+A single app can serve JSON, HTML, plain text, and file downloads — each endpoint chooses its own response type:
+
+```python
+@app.agent_endpoint(name="api")
+async def api(intent, context):
+    return {"data": "json"}          # -> JSON
+
+@app.agent_endpoint(name="page")
+async def page(intent, context):
+    return HTMLResult(content="<h1>HTML</h1>")  # -> text/html
+
+@app.agent_endpoint(name="health")
+async def health(intent, context):
+    return PlainTextResult(content="OK")  # -> text/plain
+
+@app.agent_endpoint(name="export")
+async def export(intent, context):
+    return FileResult(content=b"data", media_type="text/csv", filename="export.csv")  # -> file download
+```
+
+---
+
+## Examples
+
+- [`examples/10_file_handling/`](https://github.com/shibuiwilliam/AgenticAPI/tree/main/examples/10_file_handling) — Upload, CSV download, and streaming
+- [`examples/11_html_responses/`](https://github.com/shibuiwilliam/AgenticAPI/tree/main/examples/11_html_responses) — HTML pages, plain text, and mixed response types

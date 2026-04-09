@@ -1,6 +1,6 @@
 # AgenticAPI Examples
 
-Nine example apps demonstrating AgenticAPI features, from a minimal hello-world to authentication and MCP integration. Each example is a standalone ASGI application that can be run with uvicorn.
+Twelve example apps demonstrating AgenticAPI features, from a minimal hello-world to interactive HTMX web apps. Each example is a standalone ASGI application that can be run with uvicorn.
 
 Every example automatically serves interactive API docs at `http://127.0.0.1:8000/docs` (Swagger UI) and `http://127.0.0.1:8000/redoc` (ReDoc).
 
@@ -17,6 +17,9 @@ Every example automatically serves interactive API docs at `http://127.0.0.1:800
 | [07_comprehensive](#07-comprehensive) | DevOps/Incidents | Configurable | Multi-feature per-endpoint composition |
 | [08_mcp_agent](#08-mcp-agent) | Task tracker | No | MCP server: `enable_mcp`, `expose_as_mcp()` |
 | [09_auth_agent](#09-auth-agent) | Info service | No | Authentication: `APIKeyHeader`, `Authenticator` |
+| [10_file_handling](#10-file-handling) | Files | No | Upload: `UploadedFiles`, download: `FileResult`, streaming |
+| [11_html_responses](#11-html-responses) | Pages | No | `HTMLResult`, `PlainTextResult`, `FileResult`, mixed endpoints |
+| [12_htmx](#12-htmx) | Todo app | No | `HtmxHeaders`, `htmx_response_headers`, partial updates |
 
 ## Running Examples
 
@@ -30,7 +33,7 @@ agenticapi dev --app examples.01_hello_agent.app:app
 uvicorn examples.01_hello_agent.app:app --reload
 ```
 
-Examples 01, 02, 08, and 09 require no API keys. Examples 03-05 require a specific LLM provider's API key. Examples 06 and 07 let you choose a provider via `AGENTICAPI_LLM_PROVIDER` and fall back to direct-handler mode when no key is set. Example 08 requires `pip install agenticapi[mcp]`.
+Examples 01, 02, 08-12 require no API keys. Examples 03-05 require a specific LLM provider's API key. Examples 06 and 07 let you choose a provider via `AGENTICAPI_LLM_PROVIDER` and fall back to direct-handler mode when no key is set. Example 08 requires `pip install agenticapi[mcp]`.
 
 ---
 
@@ -474,6 +477,143 @@ curl -X POST http://127.0.0.1:8000/agent/info.admin \
 | `POST /agent/info.public` | Public information | None |
 | `POST /agent/info.protected` | User information | API key required |
 | `POST /agent/info.admin` | Admin operations | API key + admin role |
+
+---
+
+## 10 File Handling
+
+Upload files via multipart form data, download files as binary or streaming responses, and mix file endpoints with standard JSON endpoints in the same app.
+
+**Features demonstrated:** `UploadedFiles` parameter injection, `UploadFile` dataclass, `FileResult` for binary and streaming downloads, Starlette `Response` passthrough, mixed JSON and file endpoints
+
+```bash
+uvicorn examples.10_file_handling.app:app --reload
+```
+
+```bash
+# Upload a file (multipart form)
+curl -X POST http://127.0.0.1:8000/agent/files.upload \
+    -F 'intent=Analyze this document' \
+    -F 'document=@README.md'
+
+# Download a CSV file
+curl -X POST http://127.0.0.1:8000/agent/files.export_csv \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Export sales data"}' \
+    -o export.csv
+
+# Stream a large response
+curl -X POST http://127.0.0.1:8000/agent/files.stream \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Stream log data"}'
+
+# Normal JSON endpoint (backward compat)
+curl -X POST http://127.0.0.1:8000/agent/files.info \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "What file types are supported?"}'
+```
+
+**Endpoints:**
+| Endpoint | Description | Response Type |
+|---|---|---|
+| `POST /agent/files.upload` | Upload files (multipart) | JSON |
+| `POST /agent/files.export_csv` | Download CSV file | `text/csv` |
+| `POST /agent/files.stream` | Streaming response | `text/plain` (chunked) |
+| `POST /agent/files.info` | File info (standard JSON) | JSON |
+
+---
+
+## 11 HTML Responses
+
+Return HTML pages, plain text, and file downloads from agent endpoints using `HTMLResult`, `PlainTextResult`, and `FileResult`. Demonstrates that the same app can serve both JSON APIs and HTML pages.
+
+**Features demonstrated:** `HTMLResult` for HTML responses, `PlainTextResult` for text responses, `FileResult` for HTML file downloads, direct Starlette `Response` passthrough, mixed response types in one app
+
+```bash
+uvicorn examples.11_html_responses.app:app --reload
+```
+
+```bash
+# HTML page
+curl -X POST http://127.0.0.1:8000/agent/pages.home \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Show the home page"}'
+
+# Dynamic HTML based on intent
+curl -X POST http://127.0.0.1:8000/agent/pages.search \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Search for Python tutorials"}'
+
+# Plain text status
+curl -X POST http://127.0.0.1:8000/agent/pages.status \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Check system status"}'
+
+# HTML report download
+curl -X POST http://127.0.0.1:8000/agent/pages.report \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Generate a report"}' -o report.html
+
+# JSON endpoint (standard AgentResponse)
+curl -X POST http://127.0.0.1:8000/agent/pages.api \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Get API data"}'
+```
+
+**Endpoints:**
+| Endpoint | Description | Response Type |
+|---|---|---|
+| `POST /agent/pages.home` | Static HTML home page | `text/html` |
+| `POST /agent/pages.search` | Dynamic HTML search results | `text/html` |
+| `POST /agent/pages.status` | Plain text status | `text/plain` |
+| `POST /agent/pages.report` | HTML report download | `text/html` (attachment) |
+| `POST /agent/pages.api` | Standard JSON API | JSON |
+
+---
+
+## 12 HTMX
+
+An interactive todo-list web app powered by [HTMX](https://htmx.org). Demonstrates how AgenticAPI can serve a full single-page experience with partial page updates — no JavaScript framework needed. The app returns full HTML pages on the first load and HTML fragments on subsequent HTMX requests.
+
+**Features demonstrated:** `HtmxHeaders` parameter injection for detecting HTMX requests, `htmx_response_headers` for controlling client-side swap behavior (`HX-Trigger`, `HX-Reswap`), `HTMLResult` for full pages and fragments, form submission handling, in-memory state
+
+```bash
+uvicorn examples.12_htmx.app:app --reload
+```
+
+Open `http://127.0.0.1:8000/agent/todo.list` in a browser (send a POST with `{"intent": "Show my todo list"}`) or use curl:
+
+```bash
+# Full HTML page (non-HTMX request)
+curl -X POST http://127.0.0.1:8000/agent/todo.list \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Show my todo list"}'
+
+# HTMX fragment (partial update)
+curl -X POST http://127.0.0.1:8000/agent/todo.list \
+    -H "Content-Type: application/json" \
+    -H "HX-Request: true" \
+    -d '{"intent": "Show my todo list"}'
+
+# Add a todo item (returns fragment + HX-Trigger header)
+curl -X POST http://127.0.0.1:8000/agent/todo.add \
+    -H "Content-Type: application/json" \
+    -H "HX-Request: true" \
+    -d '{"intent": "Buy groceries"}'
+
+# Search todos (returns filtered fragment)
+curl -X POST http://127.0.0.1:8000/agent/todo.search \
+    -H "Content-Type: application/json" \
+    -H "HX-Request: true" \
+    -d '{"intent": "Find tasks about code"}'
+```
+
+**Endpoints:**
+| Endpoint | Description | Response |
+|---|---|---|
+| `POST /agent/todo.list` | Full page or todo list fragment | `text/html` |
+| `POST /agent/todo.add` | Add a todo, return updated list | `text/html` fragment |
+| `POST /agent/todo.search` | Search todos, return filtered list | `text/html` fragment |
 
 ---
 

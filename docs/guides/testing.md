@@ -4,11 +4,11 @@
 
 | Category | Files | Tests | Purpose |
 |---|---|---|---|
-| Unit tests | 44 | ~530 | Individual module correctness |
+| Unit tests | 46 | ~550 | Individual module correctness |
 | Integration tests | 4 | ~40 | Cross-module interaction (auth flow, etc.) |
-| E2E tests | 2 | ~80 | Full HTTP request cycle + all 10 examples |
+| E2E tests | 2 | ~100 | Full HTTP request cycle + all 12 examples |
 | Benchmarks | 4 | ~10 | Performance targets |
-| **Total** | **54** | **~687** | **89% code coverage** |
+| **Total** | **56** | **~713** | **88% code coverage** |
 
 ## Running Tests
 
@@ -120,6 +120,8 @@ tests/
         test_security.py              Auth schemes, Authenticator, endpoint auth propagation
         test_file_response.py         FileResult, Response passthrough, backward compat
         test_file_upload.py           Multipart upload, UploadedFiles injection
+        test_custom_responses.py      HTMLResult, PlainTextResult
+        test_htmx.py                  HtmxHeaders, htmx_response_headers
         test_background_tasks.py      AgentTasks execution
         test_openapi.py               OpenAPI schema generation
         test_params.py                HarnessDepends
@@ -151,7 +153,7 @@ tests/
         test_fastapi_compat.py        Mount compatibility
         test_auth_flow.py             Authentication: 401/200, app/endpoint auth, context
     e2e/
-        test_examples.py              E2E tests for all 10 examples
+        test_examples.py              E2E tests for all 12 examples
         test_full_request_cycle.py    Complete pipeline: LLM -> harness -> sandbox -> response
     benchmarks/
         bench_intent_parsing.py       bench_policy_evaluation.py

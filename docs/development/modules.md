@@ -17,8 +17,9 @@ src/agenticapi/
 
     interface/
         intent.py            Intent, IntentAction, IntentParser, IntentScope
-        response.py          AgentResponse, FileResult, ResponseFormatter
+        response.py          AgentResponse, FileResult, HTMLResult, PlainTextResult, ResponseFormatter
         upload.py            UploadFile, UploadedFiles — file upload types
+        htmx.py              HtmxHeaders, htmx_response_headers — HTMX support
         tasks.py             AgentTasks — background task accumulator
         session.py           Session, SessionManager (in-memory with TTL)
         endpoint.py          AgentEndpointDef (endpoint configuration dataclass)
@@ -126,8 +127,11 @@ AgenticApp, AgentRouter, AgentContext, AgentResponse, AgentTasks
 # Intent
 Intent, IntentAction, IntentParser, IntentScope
 
-# File handling
-FileResult, UploadFile, UploadedFiles
+# File handling & custom responses
+FileResult, HTMLResult, PlainTextResult, UploadFile, UploadedFiles
+
+# HTMX
+HtmxHeaders, htmx_response_headers
 
 # Security
 APIKeyHeader, APIKeyQuery, HTTPBearer, HTTPBasic

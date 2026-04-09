@@ -1,11 +1,11 @@
 # Module Reference
 
-## Source Structure (80 files, 10,375 lines)
+## Source Structure (81 files, 10,613 lines)
 
 ```
 src/agenticapi/
-    __init__.py              Public API exports (41 symbols)
-    app.py                   AgenticApp — main ASGI application (763 lines)
+    __init__.py              Public API exports (48 symbols)
+    app.py                   AgenticApp — main ASGI application (844 lines)
     routing.py               AgentRouter — endpoint grouping with prefix/tags
     types.py                 AutonomyLevel, TraceLevel, Severity enums; JSON/Headers type aliases
     exceptions.py            Exception hierarchy with HTTP status code mapping
@@ -16,11 +16,12 @@ src/agenticapi/
 
     interface/
         intent.py            Intent, IntentAction, IntentParser, IntentScope
-        response.py          AgentResponse, ResponseFormatter, FileResult
+        response.py          AgentResponse, ResponseFormatter, FileResult, HTMLResult, PlainTextResult
         session.py           Session, SessionManager (in-memory with TTL)
         endpoint.py          AgentEndpointDef (endpoint configuration dataclass)
         tasks.py             AgentTasks — background tasks (like FastAPI's BackgroundTasks)
         upload.py            UploadFile, UploadedFiles — multipart file upload support
+        htmx.py              HtmxHeaders, htmx_response_headers — HTMX request/response support
         compat/
             rest.py          RESTCompat, expose_as_rest — REST route generation
             fastapi.py       mount_fastapi, mount_in_agenticapi — ASGI mount
@@ -135,6 +136,12 @@ APIKeyHeader, APIKeyQuery, HTTPBearer, HTTPBasic
 
 # File handling
 FileResult, UploadFile, UploadedFiles
+
+# Custom responses
+HTMLResult, PlainTextResult
+
+# HTMX
+HtmxHeaders, htmx_response_headers
 
 # Exceptions
 AgenticAPIError, HarnessError, PolicyViolation, SandboxViolation

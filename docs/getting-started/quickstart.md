@@ -118,7 +118,7 @@ print(response.reasoning)
 
 ## Next Steps
 
-- [Examples](examples.md) — Ten example apps from hello-world to full-stack
+- [Examples](examples.md) — Twelve example apps from hello-world to HTMX
 - [Architecture](../guides/architecture.md) — How the layers connect
 - [Authentication](../guides/authentication.md) — API key, Bearer, Basic auth
 - [File Handling](../guides/file-handling.md) — Upload, download, streaming

@@ -80,7 +80,7 @@ Execute intent:
     |   4. Return ExecutionResult -> AgentResponse
     |
     |-- [Direct handler path]:
-    |   1. Inject AgentTasks, UploadedFiles if handler declares them
+    |   1. Inject AgentTasks, UploadedFiles, HtmxHeaders if handler declares them
     |   2. Call handler(intent, context, ...)
     |   3. If result is Response/FileResult -> pass through (file download)
     |   4. Otherwise -> wrap result in AgentResponse
@@ -109,6 +109,8 @@ Return response:
 | `BackgroundTasks` | `AgentTasks` | Post-response task execution |
 | `UploadFile` | `UploadedFiles` | File upload via multipart |
 | `FileResponse` | `FileResult` | File download helper |
+| `HTMLResponse` | `HTMLResult` | HTML response |
+| — | `HtmxHeaders` | HTMX request header detection (auto-injected) |
 | Security schemes | `Authenticator` | API key, Bearer, Basic auth |
 | `Depends()` | `HarnessDepends()` | Dependency injection |
 | `app.add_middleware()` | `app.add_middleware()` | Starlette middleware (CORS, compression) |

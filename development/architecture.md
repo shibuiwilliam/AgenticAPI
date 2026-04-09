@@ -88,10 +88,13 @@ Execute intent:
     |
     |-- [Direct handler path]:
     |   1. Parse multipart form if present -> inject UploadedFiles
-    |   2. Call handler(intent, context [, files] [, tasks])
+    |   2. Parse HTMX headers if HtmxHeaders param declared -> inject HtmxHeaders
+    |   3. Call handler(intent, context [, files] [, tasks] [, htmx])
     |   3. If handler returns FileResult -> file download response
-    |   4. If handler returns Starlette Response -> passthrough
-    |   5. Otherwise wrap result in AgentResponse
+    |   4. If handler returns HTMLResult -> text/html response
+    |   5. If handler returns PlainTextResult -> text/plain response
+    |   6. If handler returns Starlette Response -> passthrough
+    |   7. Otherwise wrap result in AgentResponse
     |
     v
 Update session with result summary
@@ -141,6 +144,10 @@ Every `AgenticApp` instance automatically registers:
 | `Security` schemes | `APIKeyHeader`, `HTTPBearer`, etc. | `Authenticator` combines scheme + verify |
 | `UploadFile` | `UploadFile` / `UploadedFiles` | Multipart file upload injection |
 | `FileResponse` | `FileResult` | File download (bytes, path, or streaming) |
+| `HTMLResponse` | `HTMLResult` | HTML response |
+| `PlainTextResponse` | `PlainTextResult` | Plain text response |
+| N/A | `HtmxHeaders` | HTMX request header parsing (auto-injected) |
+| N/A | `htmx_response_headers()` | HTMX response header builder |
 | Pydantic model | Pydantic model | Schema definitions |
 | `/docs` | `/docs` | Swagger UI (auto-generated) |
 | `/redoc` | `/redoc` | ReDoc (auto-generated) |

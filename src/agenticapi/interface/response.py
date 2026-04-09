@@ -1,8 +1,16 @@
-"""Agent response model, file results, and formatting.
+"""Agent response model, custom result types, and formatting.
 
 Provides the AgentResponse data class representing the result of an
-agent operation, FileResult for file download responses, and
-ResponseFormatter for serializing responses into different output formats.
+agent operation, FileResult for file downloads, HTMLResult and
+PlainTextResult for non-JSON responses, and ResponseFormatter for
+serializing responses into different output formats.
+
+Handlers can return any of these types:
+- ``dict`` or ``AgentResponse`` — JSON response (default)
+- ``FileResult`` — file download with Content-Disposition
+- ``HTMLResult`` — HTML page response
+- ``PlainTextResult`` — plain text response
+- Any Starlette ``Response`` subclass — full control
 """
 
 from __future__ import annotations
@@ -192,4 +200,77 @@ class FileResult:
             content=bytes(self.content),
             media_type=self.media_type,
             headers=extra_headers or None,
+        )
+
+
+@dataclass(slots=True)
+class HTMLResult:
+    """Convenience wrapper for returning HTML from agent endpoints.
+
+    Equivalent to FastAPI's ``HTMLResponse``. The framework converts it
+    to a Starlette ``HTMLResponse`` automatically.
+
+    Example:
+        @app.agent_endpoint(name="dashboard")
+        async def dashboard(intent, context):
+            return HTMLResult(content="<h1>Dashboard</h1><p>Welcome!</p>")
+
+    Attributes:
+        content: HTML string or bytes.
+        status_code: HTTP status code (default 200).
+        headers: Additional response headers.
+    """
+
+    content: str | bytes
+    status_code: int = 200
+    headers: dict[str, str] | None = None
+
+    def to_response(self) -> Response:
+        """Convert to a Starlette HTMLResponse.
+
+        Returns:
+            An HTMLResponse with ``text/html`` content type.
+        """
+        from starlette.responses import HTMLResponse
+
+        return HTMLResponse(
+            content=self.content,
+            status_code=self.status_code,
+            headers=self.headers,
+        )
+
+
+@dataclass(slots=True)
+class PlainTextResult:
+    """Convenience wrapper for returning plain text from agent endpoints.
+
+    Equivalent to FastAPI's ``PlainTextResponse``.
+
+    Example:
+        @app.agent_endpoint(name="status")
+        async def status(intent, context):
+            return PlainTextResult(content="OK")
+
+    Attributes:
+        content: Text string or bytes.
+        status_code: HTTP status code (default 200).
+        headers: Additional response headers.
+    """
+
+    content: str | bytes
+    status_code: int = 200
+    headers: dict[str, str] | None = None
+
+    def to_response(self) -> Response:
+        """Convert to a Starlette PlainTextResponse.
+
+        Returns:
+            A PlainTextResponse with ``text/plain`` content type.
+        """
+        from starlette.responses import PlainTextResponse
+
+        return PlainTextResponse(
+            content=self.content,
+            status_code=self.status_code,
+            headers=self.headers,
         )

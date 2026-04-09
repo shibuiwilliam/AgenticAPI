@@ -77,6 +77,7 @@ nav:
     - Harness & Safety: guides/harness.md
     - Authentication: guides/authentication.md
     - File Handling: guides/file-handling.md
+    - HTMX Support: guides/htmx.md
     - LLM Backends: guides/llm-backends.md
     - Tools: guides/tools.md
     - Dynamic Pipelines: guides/pipelines.md
@@ -92,7 +93,8 @@ nav:
     - AgenticApp: api/app.md
     - Intent, Response & Tasks: api/interface.md
     - Security: api/security.md
-    - File Upload & Download: api/upload.md
+    - File Upload & Responses: api/upload.md
+    - HTMX: api/htmx.md
     - Harness Engine: api/harness.md
     - Policies: api/policies.md
     - Sandbox & Analysis: api/sandbox.md

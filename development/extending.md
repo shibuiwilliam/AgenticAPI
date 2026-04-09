@@ -201,6 +201,74 @@ async def export_csv(intent, context):
 
 Reference: `examples/10_file_handling/app.py`
 
+## Adding Custom Response Types
+
+Handlers can return non-JSON responses using result wrapper types:
+
+```python
+from agenticapi import HTMLResult, PlainTextResult, FileResult
+
+# HTML page
+@app.agent_endpoint(name="dashboard")
+async def dashboard(intent, context):
+    return HTMLResult(content="<h1>Dashboard</h1><p>Welcome!</p>")
+
+# Plain text
+@app.agent_endpoint(name="status")
+async def status(intent, context):
+    return PlainTextResult(content="OK")
+
+# File download
+@app.agent_endpoint(name="export")
+async def export(intent, context):
+    return FileResult(content=b"csv,data", media_type="text/csv", filename="export.csv")
+```
+
+You can also return any Starlette `Response` subclass directly (HTMLResponse, StreamingResponse, etc.) for full control over headers and status codes.
+
+Reference: `examples/11_html_responses/app.py`
+
+## Building HTMX Apps
+
+AgenticAPI provides built-in HTMX support for building interactive server-rendered UIs with agent endpoints.
+
+### HtmxHeaders (request detection)
+
+Add `HtmxHeaders` as a handler parameter — it's auto-injected with parsed HTMX request headers:
+
+```python
+from agenticapi import HtmxHeaders, HTMLResult
+
+@app.agent_endpoint(name="items")
+async def items(intent, context, htmx: HtmxHeaders):
+    if htmx.is_htmx:
+        # Return just the HTML fragment for HTMX partial update
+        return HTMLResult(content="<li>New item</li>")
+    # Return full page for initial load
+    return HTMLResult(content="<html>...</html>")
+```
+
+`HtmxHeaders` attributes: `is_htmx`, `boosted`, `target`, `trigger`, `trigger_name`, `current_url`, `prompt`
+
+### htmx_response_headers (response control)
+
+Use `htmx_response_headers()` to build HTMX response headers for client-side control:
+
+```python
+from agenticapi import htmx_response_headers, HTMLResult
+from starlette.responses import HTMLResponse
+
+@app.agent_endpoint(name="add")
+async def add_item(intent, context, htmx: HtmxHeaders):
+    # ... create item ...
+    headers = htmx_response_headers(trigger="itemAdded", retarget="#item-list", reswap="beforeend")
+    return HTMLResponse(content="<li>Added!</li>", headers=headers)
+```
+
+Supported headers: `trigger`, `trigger_after_settle`, `trigger_after_swap`, `redirect`, `refresh`, `retarget`, `reswap`, `push_url`, `replace_url`
+
+Reference: `examples/12_htmx/app.py`
+
 ## Exposing Endpoints via MCP
 
 1. Install: `pip install agenticapi[mcp]`

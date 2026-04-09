@@ -33,13 +33,17 @@ from agenticapi.interface import (
     AgentResponse,
     AgentTasks,
     FileResult,
+    HTMLResult,
+    HtmxHeaders,
     Intent,
     IntentAction,
     IntentParser,
     IntentScope,
+    PlainTextResult,
     UploadedFiles,
     UploadFile,
 )
+from agenticapi.interface.htmx import htmx_response_headers
 from agenticapi.routing import AgentRouter
 from agenticapi.runtime.context import AgentContext
 from agenticapi.security import (
@@ -88,16 +92,21 @@ __all__ = [
     "DataPolicy",
     # File handling
     "FileResult",
+    # Custom responses
+    "HTMLResult",
     # Security (contd)
     "HTTPBasic",
     "HTTPBearer",
     "HarnessEngine",
     "HarnessError",
+    # HTMX
+    "HtmxHeaders",
     "Intent",
     "IntentAction",
     "IntentParseError",
     "IntentParser",
     "IntentScope",
+    "PlainTextResult",
     "PolicyViolation",
     "ResourcePolicy",
     "RuntimePolicy",
@@ -111,4 +120,5 @@ __all__ = [
     "UploadedFiles",
     # Version
     "__version__",
+    "htmx_response_headers",
 ]

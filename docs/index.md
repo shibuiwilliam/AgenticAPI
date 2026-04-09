@@ -30,6 +30,8 @@ uvicorn myapp:app --reload
 - **Harness engineering** — Policies, static analysis, sandbox, audit trails
 - **Multi-LLM** — Anthropic Claude, OpenAI GPT, Google Gemini, or your own
 - **Authentication** — API key, Bearer token, Basic auth — per-endpoint or app-wide
+- **Custom responses** — `HTMLResult`, `PlainTextResult`, `FileResult`, or any Starlette `Response`
+- **HTMX support** — `HtmxHeaders` auto-injection, partial page updates
 - **File handling** — Upload via multipart, download via `FileResult`, streaming
 - **MCP support** — Expose endpoints as MCP tools for Claude Desktop, Cursor, etc.
 - **OpenAPI / Swagger / ReDoc** — Auto-generated, like FastAPI
@@ -37,13 +39,13 @@ uvicorn myapp:app --reload
 - **Approval workflows** — Human-in-the-loop for sensitive operations
 - **ASGI-native** — Built on Starlette, runs on uvicorn
 
-**Current status:** 80 source files, 10,353 lines of code, 687 tests, 89% coverage, 10 examples.
+**Current status:** 81 source files, 10,613 lines of code, 713 tests, 88% coverage, 12 examples.
 
 ## Quick Links
 
 - [Installation](getting-started/installation.md)
 - [Quick Start](getting-started/quickstart.md)
-- [Examples](getting-started/examples.md) — 10 runnable apps from hello-world to full-stack
+- [Examples](getting-started/examples.md) — 12 runnable apps from hello-world to HTMX
 - [Architecture](guides/architecture.md)
 - [Authentication](guides/authentication.md)
 - [File Handling](guides/file-handling.md)

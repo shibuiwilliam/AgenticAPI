@@ -4,8 +4,8 @@
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-681%20passed-brightgreen.svg)]()
-[![Coverage](https://img.shields.io/badge/coverage-89%25-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-713%20passed-brightgreen.svg)]()
+[![Coverage](https://img.shields.io/badge/coverage-88%25-brightgreen.svg)]()
 
 ```python
 from agenticapi import AgenticApp, AgentResponse, Intent
@@ -28,7 +28,7 @@ curl -X POST http://127.0.0.1:8000/agent/greeter \
     -d '{"intent": "Hello, how are you?"}'
 ```
 
-Interactive API docs are auto-generated at `/docs` (Swagger UI) and `/redoc`.
+Swagger UI at `/docs`, ReDoc at `/redoc`, capability discovery at `/capabilities` — all auto-generated.
 
 ---
 
@@ -38,7 +38,7 @@ AgenticAPI is like **FastAPI for AI agents**. Where FastAPI helps you build type
 
 Your endpoints accept natural language intents instead of structured requests. Under the hood, an LLM can generate Python code to fulfill the intent, and a multi-layered harness system evaluates, sandboxes, and audits every execution before it touches your data.
 
-You can use it with or without an LLM — at its simplest, it's just a decorator-based ASGI framework. At its most powerful, it's a complete agent execution platform.
+You can use it with or without an LLM — at its simplest, it's a decorator-based ASGI framework. At its most powerful, it's a complete agent execution platform.
 
 ---
 
@@ -46,23 +46,25 @@ You can use it with or without an LLM — at its simplest, it's just a decorator
 
 | Category | What you get |
 |---|---|
-| **Agent endpoints** | Decorator-based registration, natural language intents, routers with prefix/tags |
+| **Agent endpoints** | Decorator-based registration, natural language intents, routers with prefix and tags |
 | **Multi-LLM** | Anthropic Claude, OpenAI GPT, Google Gemini — swap with one line, or bring your own |
 | **Safety harness** | Code policies, data policies, resource limits, static AST analysis, process sandbox |
 | **Approval workflows** | Declarative rules for human-in-the-loop approval of sensitive operations |
-| **Authentication** | API key, Bearer token, Basic auth — per-endpoint, per-router, or app-wide |
-| **File handling** | Upload via multipart (50 MB limit), download via `FileResult`, streaming responses |
-| **MCP support** | Expose endpoints as MCP tools for Claude Desktop, Cursor, and other LLM clients |
+| **Authentication** | API key, Bearer token, Basic auth — per-endpoint or app-wide |
+| **File handling** | Upload via multipart (50 MB limit), download via `FileResult`, streaming |
+| **Custom responses** | `HTMLResult`, `PlainTextResult`, or any Starlette `Response` subclass |
+| **HTMX support** | `HtmxHeaders` auto-injection, `htmx_response_headers()`, partial page updates |
+| **MCP support** | Expose endpoints as MCP tools for Claude Desktop and Cursor |
 | **OpenAPI docs** | Auto-generated Swagger UI, ReDoc, and OpenAPI 3.1.0 schema |
-| **Background tasks** | `AgentTasks` for post-response processing (like FastAPI's `BackgroundTasks`) |
-| **Middleware** | Full Starlette middleware support (CORS, compression, timing, etc.) |
+| **Background tasks** | `AgentTasks` for post-response work (like FastAPI's `BackgroundTasks`) |
+| **Middleware** | Full Starlette middleware (CORS, compression, custom) |
 | **Dynamic pipelines** | Agent-level processing stages composed at runtime |
-| **Agent-to-Agent** | Capability discovery, trust scoring, inter-agent communication foundation |
-| **Ops agents** | Autonomous monitoring agents with severity-based autonomy gating |
-| **REST compatibility** | Mount FastAPI apps inside AgenticAPI, or expose agent endpoints as REST routes |
-| **Sessions** | Multi-turn conversation support with context accumulation and TTL |
+| **Agent-to-Agent** | Capability discovery, trust scoring, inter-agent communication |
+| **Ops agents** | Autonomous monitoring with severity-based autonomy gating |
+| **REST compatibility** | Mount FastAPI apps, or expose agent endpoints as GET/POST routes |
+| **Sessions** | Multi-turn conversations with context accumulation and TTL |
 | **Observability** | Structured logging via structlog, execution traces, bounded audit records |
-| **ASGI-native** | Built on Starlette — runs with uvicorn, Daphne, Hypercorn |
+| **ASGI-native** | Built on Starlette — works with uvicorn, Daphne, Hypercorn |
 
 ---
 
@@ -74,7 +76,7 @@ You can use it with or without an LLM — at its simplest, it's just a decorator
 pip install agenticapi
 ```
 
-Or for development:
+For development:
 
 ```bash
 git clone https://github.com/shibuiwilliam/AgenticAPI.git
@@ -82,7 +84,7 @@ cd AgenticAPI
 uv sync --group dev
 ```
 
-Optional extras:
+Optional:
 
 ```bash
 pip install agenticapi[mcp]    # MCP server support
@@ -112,11 +114,11 @@ curl -X POST http://127.0.0.1:8000/agent/orders \
     -d '{"intent": "How many orders do we have?"}'
 ```
 
-Every app also gets `/health`, `/capabilities`, `/docs`, and `/redoc` for free.
+Every app gets `/health`, `/capabilities`, `/docs`, and `/redoc` automatically.
 
 ### 2. With LLM and safety harness
 
-Add an LLM backend and harness engine to generate and safely execute code from natural language:
+Add an LLM backend and harness engine — the framework generates and safely executes code from natural language:
 
 ```python
 from agenticapi import AgenticApp, CodePolicy, DataPolicy, HarnessEngine
@@ -138,7 +140,7 @@ async def analytics(intent, context):
     pass  # The harness pipeline handles everything
 ```
 
-The pipeline: **parse intent -> generate code via LLM -> evaluate policies -> AST analysis -> process sandbox -> audit trace -> response**.
+Pipeline: **parse intent -> generate code via LLM -> evaluate policies -> AST analysis -> sandbox execution -> audit trace -> response**.
 
 ### 3. Multi-endpoint app with routers
 
@@ -175,15 +177,13 @@ response = await app.process_intent(
     session_id="session-123",
 )
 print(response.result)          # The handler's return value
-print(response.generated_code)  # The code the LLM generated (if using harness)
+print(response.generated_code)  # Code the LLM generated (if using harness)
 print(response.reasoning)       # The LLM's reasoning
 ```
 
 ---
 
 ## How It Maps to FastAPI
-
-If you know FastAPI, you already know the patterns:
 
 | FastAPI | AgenticAPI | Notes |
 |---|---|---|
@@ -192,11 +192,12 @@ If you know FastAPI, you already know the patterns:
 | `APIRouter` | `AgentRouter` | Grouping with prefix and tags |
 | `Request` | `Intent` | Input (natural language) |
 | `Response` | `AgentResponse` | Output with result, reasoning, trace |
-| `BackgroundTasks` | `AgentTasks` | Post-response task execution |
-| `Depends()` | `HarnessDepends()` | Dependency injection |
-| `app.add_middleware()` | `app.add_middleware()` | Starlette middleware (CORS, etc.) |
-| `UploadFile` | `UploadedFiles` | File upload via multipart |
+| `HTMLResponse` | `HTMLResult` | HTML page response |
+| `PlainTextResponse` | `PlainTextResult` | Plain text response |
 | `FileResponse` | `FileResult` | File download |
+| `BackgroundTasks` | `AgentTasks` | Post-response task execution |
+| `app.add_middleware()` | `app.add_middleware()` | Starlette middleware |
+| `UploadFile` | `UploadedFiles` | File upload via multipart |
 | Security schemes | `Authenticator` | API key, Bearer, Basic auth |
 | `/docs` | `/docs` | Swagger UI (auto-generated) |
 
@@ -209,7 +210,7 @@ Every piece of LLM-generated code passes through a multi-layered safety pipeline
 ```
 Generated Code
   -> Policy Evaluation (4 policy types)
-  -> Static AST Analysis (forbidden imports, eval/exec, file I/O, getattr)
+  -> Static AST Analysis (forbidden imports, eval/exec, getattr, file I/O)
   -> Approval Check (human-in-the-loop for sensitive operations)
   -> Process Sandbox (isolated subprocess with timeout + resource limits)
   -> Post-Execution Monitors + Validators
@@ -221,22 +222,9 @@ Generated Code
 ```python
 from agenticapi import CodePolicy, DataPolicy, ResourcePolicy, RuntimePolicy
 
-CodePolicy(
-    denied_modules=["os", "subprocess", "sys"],
-    deny_eval_exec=True,
-    deny_dynamic_import=True,
-    max_code_lines=500,
-)
-
-DataPolicy(
-    readable_tables=["orders", "products"],
-    writable_tables=["orders"],
-    restricted_columns=["password_hash", "ssn"],
-    deny_ddl=True,
-)
-
+CodePolicy(denied_modules=["os", "subprocess"], deny_eval_exec=True, deny_dynamic_import=True)
+DataPolicy(readable_tables=["orders"], restricted_columns=["password_hash"], deny_ddl=True)
 ResourcePolicy(max_cpu_seconds=30, max_memory_mb=512, max_execution_time_seconds=60)
-
 RuntimePolicy(max_code_complexity=500, max_code_lines=500)
 ```
 
@@ -248,31 +236,16 @@ from agenticapi import ApprovalRule, ApprovalWorkflow, HarnessEngine
 harness = HarnessEngine(
     policies=[code_policy, data_policy],
     approval_workflow=ApprovalWorkflow(rules=[
-        ApprovalRule(
-            name="write_approval",
-            require_for_actions=["write", "execute"],
-            approvers=["db_admin"],
-            timeout_seconds=1800,
-        ),
+        ApprovalRule(name="write_approval", require_for_actions=["write"], approvers=["admin"]),
     ]),
 )
 ```
 
-When approval is required, the endpoint returns HTTP 202 with a `request_id`. Resolve it programmatically:
-
-```python
-await workflow.resolve(request_id, approved=True, approver="admin@example.com")
-```
-
-### Sandbox & Audit
-
-Code runs in an isolated subprocess with timeout enforcement. User code is base64-encoded for safe transport. Every execution is recorded as an `ExecutionTrace` with the original intent, generated code, policy evaluations, and timing. The `AuditRecorder` has bounded storage (configurable `max_traces`) to prevent memory exhaustion.
+Returns HTTP 202 with `request_id`. Resolve: `await workflow.resolve(id, approved=True, approver="admin")`.
 
 ---
 
 ## Authentication
-
-Following FastAPI's security patterns:
 
 ```python
 from agenticapi.security import APIKeyHeader, Authenticator, AuthUser, AuthCredentials
@@ -287,14 +260,54 @@ async def verify(credentials: AuthCredentials) -> AuthUser | None:
 auth = Authenticator(scheme=api_key, verify=verify)
 
 @app.agent_endpoint(name="orders", auth=auth)  # Per-endpoint
-async def orders(intent, context):
-    print(context.user_id)  # "user-1"
-
-# Or app-wide:
-app = AgenticApp(auth=auth)
+app = AgenticApp(auth=auth)                     # Or app-wide
 ```
 
-Available schemes: `APIKeyHeader`, `APIKeyQuery`, `HTTPBearer`, `HTTPBasic`.
+Schemes: `APIKeyHeader`, `APIKeyQuery`, `HTTPBearer`, `HTTPBasic`.
+
+---
+
+## Custom Responses & HTMX
+
+Handlers default to JSON but can return HTML, plain text, files, or streaming:
+
+```python
+from agenticapi import HTMLResult, PlainTextResult, FileResult
+
+@app.agent_endpoint(name="dashboard")
+async def dashboard(intent, context):
+    return HTMLResult(content="<h1>Dashboard</h1><p>Welcome!</p>")
+
+@app.agent_endpoint(name="status")
+async def status(intent, context):
+    return PlainTextResult(content="OK")
+
+@app.agent_endpoint(name="export")
+async def export(intent, context):
+    return FileResult(content=b"name,value\nalice,42", media_type="text/csv", filename="export.csv")
+```
+
+### HTMX Integration
+
+Build interactive web apps with partial page updates:
+
+```python
+from agenticapi import HtmxHeaders, HTMLResult
+from agenticapi.interface.htmx import htmx_response_headers
+
+@app.agent_endpoint(name="items")
+async def items(intent, context, htmx: HtmxHeaders):
+    if htmx.is_htmx:
+        return HTMLResult(content="<li>Item 1</li>")  # Fragment for HTMX
+    return HTMLResult(content="<html><body>Full page</body></html>")
+
+@app.agent_endpoint(name="add")
+async def add(intent, context, htmx: HtmxHeaders):
+    headers = htmx_response_headers(trigger="itemAdded", reswap="beforeend")
+    return HTMLResult(content="<li>New item</li>", headers=headers)
+```
+
+`HtmxHeaders` is auto-injected and provides: `is_htmx`, `boosted`, `target`, `trigger`, `trigger_name`, `current_url`, `prompt`.
 
 ---
 
@@ -302,58 +315,36 @@ Available schemes: `APIKeyHeader`, `APIKeyQuery`, `HTTPBearer`, `HTTPBasic`.
 
 ```python
 from agenticapi.interface.upload import UploadedFiles
-from agenticapi.interface.response import FileResult
 
-# Upload: add UploadedFiles parameter
 @app.agent_endpoint(name="analyze")
 async def analyze(intent, context, files: UploadedFiles):
     doc = files["document"]  # .filename, .content (bytes), .size, .content_type
     return {"filename": doc.filename, "size": doc.size}
-
-# Download: return FileResult
-@app.agent_endpoint(name="export")
-async def export(intent, context):
-    return FileResult(content=b"name,value\nalice,42", media_type="text/csv", filename="export.csv")
 ```
 
 ```bash
-# Upload
 curl -F 'intent=Analyze this' -F 'document=@report.pdf' http://localhost:8000/agent/analyze
-
-# Download
-curl -X POST http://localhost:8000/agent/export \
-    -H "Content-Type: application/json" \
-    -d '{"intent": "Export data"}' -o export.csv
 ```
 
-Upload limit: 50 MB per file. Handlers can also return Starlette `Response`, `FileResponse`, or `StreamingResponse` directly.
+Upload limit: 50 MB per file. Handlers can also return Starlette `Response`, `StreamingResponse`, etc.
 
 ---
 
 ## Middleware
 
-Full Starlette middleware support, just like FastAPI:
-
 ```python
 from starlette.middleware.cors import CORSMiddleware
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 ```
 
 Or via constructor: `AgenticApp(middleware=[Middleware(CORSMiddleware, ...)])`.
-
-Middleware wraps the entire ASGI app (all routes). For agent-specific request context enrichment inside handlers, use `DynamicPipeline` instead.
 
 ---
 
 ## MCP Support
 
-Expose agent endpoints as [MCP](https://modelcontextprotocol.io) tools for Claude Desktop, Cursor, and other LLM clients:
+Expose endpoints as [MCP](https://modelcontextprotocol.io) tools:
 
 ```bash
 pip install agenticapi[mcp]
@@ -363,17 +354,10 @@ pip install agenticapi[mcp]
 from agenticapi.interface.compat.mcp import expose_as_mcp
 
 @app.agent_endpoint(name="search", enable_mcp=True)
-async def search(intent, context):
-    ...
+async def search(intent, context): ...
 
 app.add_routes(expose_as_mcp(app, path="/mcp"))
 ```
-
-```bash
-npx @modelcontextprotocol/inspector http://127.0.0.1:8000/mcp
-```
-
-Only endpoints marked with `enable_mcp=True` are exposed as MCP tools.
 
 ---
 
@@ -386,13 +370,11 @@ Only endpoints marked with `enable_mcp=True` are exposed as MCP tools.
 | `GeminiBackend` | Google | `gemini-2.5-flash` | `GOOGLE_API_KEY` |
 | `MockBackend` | (Testing) | `mock` | -- |
 
-All backends implement the `LLMBackend` protocol with configurable `timeout` (default 120s). Bring your own by implementing `generate()`, `generate_stream()`, and `model_name`.
+All implement the `LLMBackend` protocol with configurable `timeout` (default 120s). Bring your own with `generate()`, `generate_stream()`, and `model_name`.
 
 ---
 
 ## Background Tasks
-
-Schedule work that runs after the response, just like FastAPI's `BackgroundTasks`:
 
 ```python
 from agenticapi import AgentTasks
@@ -402,16 +384,13 @@ async def signup(intent, context, tasks: AgentTasks):
     tasks.add_task(send_welcome_email, user_id=123)
     tasks.add_task(update_analytics, action="signup")
     return {"status": "signed up"}
-    # send_welcome_email and update_analytics run after the response
 ```
 
-Both sync and async callables are supported. Failed tasks are logged but don't block other tasks.
+Sync and async callables supported. Failed tasks are logged but don't block others.
 
 ---
 
 ## Tools
-
-Four built-in tools for generated code to interact with external systems:
 
 ```python
 from agenticapi.runtime.tools import ToolRegistry, DatabaseTool, CacheTool, HttpClientTool, QueueTool
@@ -423,28 +402,19 @@ registry.register(HttpClientTool(name="api", allowed_hosts=["api.example.com"]))
 registry.register(QueueTool(name="queue", max_size=1000))
 ```
 
-Custom tools implement the `Tool` protocol -- provide a `definition` property and an `async invoke()` method.
+Custom tools: implement the `Tool` protocol with `definition` property and `async invoke()`.
 
 ---
 
 ## Dynamic Pipelines
 
-Middleware-like processing stages that agents can compose at runtime:
-
 ```python
 from agenticapi.application import DynamicPipeline, PipelineStage
 
 pipeline = DynamicPipeline(
-    base_stages=[
-        PipelineStage("auth", handler=auth_fn, required=True, order=10),
-        PipelineStage("rate_limit", handler=rate_fn, required=True, order=20),
-    ],
-    available_stages=[
-        PipelineStage("cache", handler=cache_fn, order=30),
-        PipelineStage("fraud_check", handler=fraud_fn, order=40),
-    ],
+    base_stages=[PipelineStage("auth", handler=auth_fn, required=True, order=10)],
+    available_stages=[PipelineStage("fraud_check", handler=fraud_fn, order=40)],
 )
-
 result = await pipeline.execute(context={"user": "alice"}, selected_stages=["fraud_check"])
 ```
 
@@ -453,23 +423,17 @@ result = await pipeline.execute(context={"user": "alice"}, selected_stages=["fra
 ## REST Compatibility
 
 ```python
-from agenticapi.interface.compat import mount_fastapi, mount_in_agenticapi, expose_as_rest
+from agenticapi.interface.compat import mount_fastapi, expose_as_rest
 
-# Mount AgenticAPI inside FastAPI
-mount_fastapi(agenticapi_app, fastapi_app, path="/agent")
-
-# Mount FastAPI inside AgenticAPI
-mount_in_agenticapi(agenticapi_app, fastapi_app, path="/api")
-
-# Expose agent endpoints as REST GET/POST routes
-app.add_routes(expose_as_rest(app, prefix="/rest"))
+mount_fastapi(agenticapi_app, fastapi_app, path="/agent")  # Mount in FastAPI
+app.add_routes(expose_as_rest(app, prefix="/rest"))         # REST routes from agents
 ```
 
 ---
 
 ## Examples
 
-Ten example apps, from minimal hello-world to a comprehensive full-stack warehouse system:
+Twelve example apps from minimal hello-world to interactive HTMX:
 
 | Example | LLM | What it demonstrates |
 |---|---|---|
@@ -478,11 +442,13 @@ Ten example apps, from minimal hello-world to a comprehensive full-stack warehou
 | [03_openai_agent](./examples/03_openai_agent) | OpenAI | Full harness pipeline with GPT |
 | [04_anthropic_agent](./examples/04_anthropic_agent) | Anthropic | Claude with ResourcePolicy |
 | [05_gemini_agent](./examples/05_gemini_agent) | Gemini | Sessions and multi-turn conversations |
-| [06_full_stack](./examples/06_full_stack) | Configurable | Pipeline, ops, middleware, background tasks, file handling, REST compat |
+| [06_full_stack](./examples/06_full_stack) | Configurable | Pipeline, ops, middleware, tasks, files, REST |
 | [07_comprehensive](./examples/07_comprehensive) | Configurable | Multi-feature per-endpoint DevOps platform |
 | [08_mcp_agent](./examples/08_mcp_agent) | None | MCP server with selective endpoint exposure |
 | [09_auth_agent](./examples/09_auth_agent) | None | API key auth with role-based access |
 | [10_file_handling](./examples/10_file_handling) | None | Upload, download, and streaming |
+| [11_html_responses](./examples/11_html_responses) | None | HTML pages, plain text, custom response types |
+| [12_htmx](./examples/12_htmx) | None | HTMX interactive todo app with partial updates |
 
 Run any example:
 
@@ -503,11 +469,11 @@ uv sync --group dev
 ### Testing
 
 ```bash
-uv run pytest                            # All 681 tests
+uv run pytest                            # All 713 tests
 uv run pytest tests/unit/ -xvs           # Unit tests, verbose
-uv run pytest tests/e2e/ -v              # E2E tests for all 10 examples
+uv run pytest tests/e2e/ -v              # E2E tests for all 12 examples
 uv run pytest -m "not requires_llm"      # Skip tests needing API keys
-uv run pytest --cov=src/agenticapi       # Coverage report (89%)
+uv run pytest --cov=src/agenticapi       # Coverage report (88%)
 ```
 
 ### Code Quality
@@ -532,22 +498,23 @@ agenticapi version                       # Show version
 
 ```
 src/agenticapi/
-    app.py                  AgenticApp -- main ASGI application
+    app.py                  AgenticApp — main ASGI application
     security.py             Authentication (APIKeyHeader, HTTPBearer, Authenticator)
-    routing.py              AgentRouter -- endpoint grouping
+    routing.py              AgentRouter — endpoint grouping
     openapi.py              OpenAPI schema, Swagger UI, ReDoc
     types.py                AutonomyLevel, Severity, TraceLevel
     exceptions.py           Exception hierarchy with HTTP status mapping
     interface/
         intent.py           Intent, IntentParser, IntentScope
-        response.py         AgentResponse, FileResult, ResponseFormatter
+        response.py         AgentResponse, FileResult, HTMLResult, PlainTextResult
+        htmx.py             HtmxHeaders, htmx_response_headers
         upload.py           UploadFile, UploadedFiles
         tasks.py            AgentTasks (background tasks)
         session.py          SessionManager with TTL expiration
         compat/             REST, FastAPI, and MCP compatibility
         a2a/                Agent-to-Agent protocol, capability, trust
     harness/
-        engine.py           HarnessEngine -- safety pipeline orchestrator
+        engine.py           HarnessEngine — safety pipeline orchestrator
         policy/             CodePolicy, DataPolicy, ResourcePolicy, RuntimePolicy
         sandbox/            ProcessSandbox, static AST analysis, monitors, validators
         approval/           ApprovalWorkflow, ApprovalRule
@@ -565,7 +532,7 @@ src/agenticapi/
     testing/                mock_llm, MockSandbox, AgentTestCase, assertions, fixtures
     cli/                    Dev server, interactive console, version
 examples/
-    01_hello_agent/ .. 10_file_handling/   # 10 runnable example apps
+    01_hello_agent/ .. 12_htmx/   # 12 runnable example apps
 docs/                       # Guides, API reference, architecture docs
 ```
 

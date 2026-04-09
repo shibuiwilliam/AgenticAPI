@@ -22,15 +22,15 @@ pre-commit-install: ## Install pre-commit hooks
 
 .PHONY: format
 format: ## Format code with ruff
-	ruff format src/ tests/
+	ruff format src/ tests/ examples/
 
 .PHONY: lint
 lint: ## Run linter
-	ruff check src/ tests/
+	ruff check src/ tests/ examples/
 
 .PHONY: lint-fix
 lint-fix: ## Run linter with auto-fix
-	ruff check --fix src/ tests/
+	ruff check --fix src/ tests/ examples/
 
 .PHONY: fix
 fix: format lint-fix ## Run all auto-fixable code quality checks

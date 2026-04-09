@@ -4,11 +4,11 @@
 
 | Category | Files | Tests | Purpose |
 |---|---|---|---|
-| Unit tests | 45+ | ~540 | Individual module correctness |
-| Integration tests | 3 | ~30 | Cross-module interaction |
-| E2E tests | 2 | ~80 | Full HTTP request cycle + all 10 example apps |
+| Unit tests | 51 | ~613 | Individual module correctness |
+| Integration tests | 4 | ~28 | Cross-module interaction |
+| E2E tests | 2 | ~100 | Full HTTP request cycle + all 12 example apps |
 | Benchmarks | 4 | 10 | Performance regression detection |
-| **Total** | **55+** | **666** | **89% code coverage** |
+| **Total** | **67** | **713** | **87% code coverage** |
 
 ## Running Tests
 
@@ -28,7 +28,7 @@ uv run pytest tests/unit/harness/test_static_analysis.py -xvs
 # Only benchmarks
 uv run pytest tests/benchmarks/
 
-# Only E2E (exercises all 9 examples)
+# Only E2E (exercises all 12 examples)
 uv run pytest tests/e2e/ -v
 
 # Skip tests requiring LLM API keys
@@ -119,7 +119,7 @@ app = create_test_app(
 
 ### E2E Example Tests
 
-The E2E test suite exercises all 9 example apps via HTTP TestClient:
+The E2E test suite exercises all 12 example apps via HTTP TestClient:
 
 ```python
 # tests/e2e/test_examples.py
@@ -147,39 +147,68 @@ Run with: `uv run pytest tests/benchmarks/ --benchmark-only`
 tests/
     conftest.py                  Shared fixtures (sample_intent_raw, sample_code, dangerous_code)
     unit/
-        test_app.py              AgenticApp creation, HTTP endpoints, error status codes
-        test_intent.py           Intent model, IntentAction, IntentParser, IntentScope
-        test_session.py          Session TTL, SessionManager CRUD, cleanup
-        test_response.py         AgentResponse serialization, ResponseFormatter
-        test_openapi.py          OpenAPI schema, Swagger UI, ReDoc, disabling, custom URLs
-        test_params.py           HarnessDepends dependency injection
-        test_fixtures.py         create_test_app factory
-        test_mock_sandbox.py     MockSandbox patterns
-        test_compat.py           REST route generation, FastAPI mount
-        test_bugfix_regressions.py  Regression tests for all bug fixes
+        test_app.py              AgenticApp creation, HTTP endpoints, error status codes (25 tests)
+        test_intent.py           Intent model, IntentAction, IntentParser, IntentScope (30 tests)
+        test_session.py          Session TTL, SessionManager CRUD, cleanup (20 tests)
+        test_response.py         AgentResponse serialization, ResponseFormatter (18 tests)
+        test_security.py         Authentication, authorization, all 4 schemes (39 tests)
+        test_openapi.py          OpenAPI schema, Swagger UI, ReDoc, disabling (12 tests)
+        test_background_tasks.py AgentTasks add/execute/error handling (11 tests)
+        test_mcp_compat.py       MCP compatibility layer (27 tests)
+        test_file_response.py    FileResult and custom response types (12 tests)
+        test_file_upload.py      UploadFile, UploadedFiles multipart handling (7 tests)
+        test_custom_responses.py HTMLResult, PlainTextResult, Response passthrough (10 tests)
+        test_params.py           HarnessDepends dependency injection (3 tests)
+        test_fixtures.py         create_test_app factory (5 tests)
+        test_mock_sandbox.py     MockSandbox patterns (8 tests)
+        test_compat.py           REST route generation, FastAPI mount (12 tests)
+        test_bugfix_regressions.py  Regression tests for all bug fixes (17 tests)
+        test_agent_test_case.py  AgentTestCase helper class (13 tests)
+        test_benchmark_runner.py BenchmarkRunner execution (8 tests)
+        test_cli_console.py      CLI console interface (5 tests)
+        test_htmx.py             HtmxHeaders parsing, htmx_response_headers builder (9 tests)
         harness/
-            test_code_policy.py, test_data_policy.py, test_policy_evaluator.py
-            test_runtime_policy.py, test_static_analysis.py, test_sandbox.py
-            test_approval.py, test_monitors.py, test_validators.py
-            test_audit_recorder.py, test_audit_exporters.py
+            test_code_policy.py        CodePolicy: denied modules, eval/exec (16 tests)
+            test_data_policy.py        DataPolicy: DDL, DML, table access (16 tests)
+            test_policy_evaluator.py   PolicyEvaluator aggregation (10 tests)
+            test_runtime_policy.py     RuntimePolicy: complexity limits (8 tests)
+            test_static_analysis.py    AST safety checks (29 tests)
+            test_sandbox.py            ProcessSandbox execution (14 tests)
+            test_approval.py           Approval workflow, rules, notifiers (21 tests)
+            test_monitors.py           Resource and output monitors (8 tests)
+            test_validators.py         Output validation (9 tests)
+            test_audit_recorder.py     Audit recording (9 tests)
+            test_audit_exporters.py    Audit export formats (8 tests)
         runtime/
-            test_code_generator.py, test_context.py, test_tool_registry.py
-            test_llm_backend.py, test_openai_backend.py, test_gemini_backend.py
-            test_prompts.py, test_http_client_tool.py, test_cache_tool.py, test_queue_tool.py
+            test_code_generator.py     Code generation from intents (9 tests)
+            test_context.py            AgentContext, ContextWindow (15 tests)
+            test_tool_registry.py      Tool registration and discovery (9 tests)
+            test_llm_backend.py        Base LLM backend interface (11 tests)
+            test_openai_backend.py     OpenAI API integration (15 tests)
+            test_gemini_backend.py     Google Gemini API integration (15 tests)
+            test_prompts.py            LLM prompting and templates (15 tests)
+            test_http_client_tool.py   HTTP client tool (11 tests)
+            test_cache_tool.py         Caching tool (12 tests)
+            test_queue_tool.py         Queue tool (14 tests)
         application/
-            test_pipeline.py     DynamicPipeline stages, ordering, limits
+            test_pipeline.py           DynamicPipeline stages, ordering (12 tests)
         ops/
-            test_ops_base.py     OpsAgent lifecycle, severity gating
+            test_ops_base.py           OpsAgent lifecycle, severity gating (10 tests)
         a2a/
-            test_protocol.py, test_capability.py, test_trust.py
+            test_protocol.py           A2A message types and routing (8 tests)
+            test_capability.py         Agent capability negotiation (7 tests)
+            test_trust.py              Trust and permission management (10 tests)
     integration/
-        test_endpoint_flow.py    Full HTTP flow via ASGI TestClient
-        test_harness_flow.py     Harness pipeline with policies, approval, monitors
-        test_fastapi_compat.py   Mount compatibility
+        test_auth_flow.py        Full authentication flow through HTTP (11 tests)
+        test_harness_flow.py     Harness blocking dangerous code (10 tests)
+        test_endpoint_flow.py    Complete endpoint request flow (4 tests)
+        test_fastapi_compat.py   FastAPI mount compatibility (3 tests)
     e2e/
-        test_full_request_cycle.py  Complete pipeline: LLM -> harness -> sandbox -> response
-        test_examples.py         All 10 example apps with HTTP requests
+        test_examples.py         All 12 example apps with HTTP requests (90 tests)
+        test_full_request_cycle.py  Complete pipeline: LLM -> harness -> sandbox (10 tests)
     benchmarks/
-        bench_intent_parsing.py, bench_policy_evaluation.py
-        bench_static_analysis.py, bench_sandbox_startup.py
+        bench_intent_parsing.py     Intent parsing performance
+        bench_policy_evaluation.py  Policy evaluation speed
+        bench_static_analysis.py    Static analysis performance
+        bench_sandbox_startup.py    Sandbox startup time
 ```

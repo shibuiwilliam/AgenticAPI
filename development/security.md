@@ -127,7 +127,7 @@ File uploads are accepted via `multipart/form-data` when a handler declares an `
 - Uploaded files are held in memory as `bytes` — no temp files written to disk
 - The `UploadFile` dataclass exposes `filename`, `content_type`, `content`, and `size`
 - File content is **not** passed to the LLM or sandbox — handlers process files directly
-- There is no built-in file size limit; application-level validation should be added in handlers
+- Maximum file size: 50MB per file (returns HTTP 413 if exceeded)
 - `python-multipart` dependency handles multipart parsing
 
 ## MCP Security
@@ -142,4 +142,4 @@ When exposing endpoints via MCP (`enable_mcp=True`), the same harness pipeline a
 - API keys must be provided via environment variables, never hardcoded
 - MCP transport does not yet support authentication/authorization
 - Approval resolution is programmatic only (no built-in admin HTTP endpoint)
-- File uploads have no built-in size limit — enforce in handler logic
+- File uploads are limited to 50MB per file (returns 413 if exceeded); additional validation should be added in handler logic

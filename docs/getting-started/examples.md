@@ -1,6 +1,6 @@
 # Examples
 
-Ten example applications demonstrate different features and LLM backends.
+Twelve example applications demonstrate different features and LLM backends.
 
 ## 01 — Hello Agent (no LLM)
 
@@ -122,6 +122,38 @@ curl -X POST http://127.0.0.1:8000/agent/files.stream -H "Content-Type: applicat
 ```
 
 **Demonstrates:** `UploadedFiles` parameter injection, multipart form parsing, `FileResult` for downloads, `StreamingResponse` passthrough, backward-compatible JSON endpoints.
+
+## 11 — HTML Responses (no LLM)
+
+HTML pages, plain text, and custom response types from agent endpoints.
+
+```bash
+uvicorn examples.11_html_responses.app:app --reload
+# HTML page:
+curl -X POST http://127.0.0.1:8000/agent/pages.home -H "Content-Type: application/json" -d '{"intent": "Show the home page"}'
+# Dynamic HTML:
+curl -X POST http://127.0.0.1:8000/agent/pages.search -H "Content-Type: application/json" -d '{"intent": "Search for Python tutorials"}'
+# Plain text:
+curl -X POST http://127.0.0.1:8000/agent/pages.status -H "Content-Type: application/json" -d '{"intent": "Check system status"}'
+```
+
+**Demonstrates:** `HTMLResult` for HTML responses, `PlainTextResult` for plain text, `FileResult` for HTML file downloads, mixed response types in one app.
+
+## 12 — HTMX (no LLM)
+
+Interactive web app with partial page updates using HTMX.
+
+```bash
+uvicorn examples.12_htmx.app:app --reload
+# Full page (non-HTMX):
+curl -X POST http://127.0.0.1:8000/agent/todo.list -H "Content-Type: application/json" -d '{"intent": "Show my todo list"}'
+# HTMX fragment (partial update):
+curl -X POST http://127.0.0.1:8000/agent/todo.list -H "Content-Type: application/json" -H "HX-Request: true" -d '{"intent": "Show my todo list"}'
+# Add item (fragment + HX-Trigger):
+curl -X POST http://127.0.0.1:8000/agent/todo.add -H "Content-Type: application/json" -H "HX-Request: true" -d '{"intent": "Buy groceries"}'
+```
+
+**Demonstrates:** `HtmxHeaders` auto-injection, `HTMLResult` for fragments and full pages, `htmx_response_headers()` for client-side control, conditional rendering based on `htmx.is_htmx`.
 
 ## Common Patterns
 

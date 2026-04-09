@@ -7,21 +7,22 @@ Technical reference documents for AgenticAPI contributors and maintainers. These
 | Document | Description |
 |---|---|
 | [architecture.md](architecture.md) | Layer structure, module dependencies, request pipeline, FastAPI mapping, constructor signatures |
-| [modules.md](modules.md) | Complete source file inventory (80 files, 10,375 lines), exception hierarchy, public API surface |
+| [modules.md](modules.md) | Complete source file inventory (81 files, 10,613 lines), exception hierarchy, public API surface |
 | [security.md](security.md) | 7-layer defense-in-depth model, authentication schemes, known limitations |
-| [testing.md](testing.md) | 666 tests across 55+ files, test patterns, benchmarks, file organization |
-| [extending.md](extending.md) | Step-by-step guides for adding policies, tools, LLM backends, examples, auth, MCP, file handling |
+| [testing.md](testing.md) | 713 tests across 67 files, test patterns, benchmarks, file organization |
+| [extending.md](extending.md) | Step-by-step guides for adding policies, tools, LLM backends, examples, auth, MCP, file handling, custom responses, HTMX |
+| [ci.md](ci.md) | GitHub Actions CI/CD pipeline, pre-commit hooks, Makefile targets |
 
 ## Quick Stats
 
 | Metric | Value |
 |---|---|
-| Source files | 80 |
-| Lines of code | 10,375 |
-| Tests | 666 |
-| Coverage | 89% |
-| Examples | 10 |
-| Public API exports | 44 |
+| Source files | 81 |
+| Lines of code | 10,613 |
+| Tests | 713 |
+| Coverage | 87% |
+| Examples | 12 |
+| Public API exports | 48 |
 | Python version | >= 3.13 |
 | Package version | 0.1.0 |
 

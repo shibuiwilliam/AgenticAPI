@@ -1,6 +1,6 @@
-# File Upload & Download
+# File Upload & Custom Responses
 
-File upload types and download response helpers.
+File upload types and response helpers for files, HTML, and plain text.
 
 ## UploadFile
 
@@ -9,3 +9,11 @@ File upload types and download response helpers.
 ## FileResult
 
 ::: agenticapi.interface.response.FileResult
+
+## HTMLResult
+
+::: agenticapi.interface.response.HTMLResult
+
+## PlainTextResult
+
+::: agenticapi.interface.response.PlainTextResult

@@ -28,8 +28,9 @@ from agenticapi.exceptions import (
     PolicyViolation,
 )
 from agenticapi.interface.endpoint import AgentEndpointDef
+from agenticapi.interface.htmx import HtmxHeaders
 from agenticapi.interface.intent import Intent, IntentParser, IntentScope
-from agenticapi.interface.response import AgentResponse, FileResult, ResponseFormatter
+from agenticapi.interface.response import AgentResponse, FileResult, HTMLResult, PlainTextResult, ResponseFormatter
 from agenticapi.interface.session import SessionManager
 from agenticapi.interface.tasks import AgentTasks
 from agenticapi.interface.upload import UploadedFiles, UploadFile
@@ -259,6 +260,7 @@ class AgenticApp:
         session_id: str | None = None,
         auth_user: AuthUser | None = None,
         files: dict[str, UploadFile] | None = None,
+        _scope: dict[str, Any] | None = None,
     ) -> AgentResponse | Response:
         """Process a natural language request programmatically.
 
@@ -310,6 +312,8 @@ class AgenticApp:
             metadata["auth_user"] = auth_user
         if files:
             metadata["files"] = files
+        if _scope:
+            metadata["scope"] = _scope
         context = AgentContext(
             trace_id=trace_id,
             endpoint_name=endpoint_def.name,
@@ -356,10 +360,10 @@ class AgenticApp:
             A raw Starlette Response is returned when the handler produces
             a file download (FileResult, FileResponse, StreamingResponse).
         """
-        if self._llm is not None and self._harness is not None:
+        if self._llm is not None and self._harness is not None and endpoint_def.autonomy_level != "manual":
             return await self._execute_with_harness(intent, context, endpoint_def), None
 
-        # Direct handler invocation (no LLM/harness)
+        # Direct handler invocation: no LLM/harness, or autonomy_level="manual"
         return await self._execute_handler_directly(intent, context, endpoint_def)
 
     async def _execute_with_harness(
@@ -465,6 +469,10 @@ class AgenticApp:
                 isinstance(param.annotation, str) and "UploadedFiles" in param.annotation
             ):
                 handler_kwargs[param_name] = context.metadata.get("files", {})
+            elif param.annotation is HtmxHeaders or (
+                isinstance(param.annotation, str) and "HtmxHeaders" in param.annotation
+            ):
+                handler_kwargs[param_name] = HtmxHeaders.from_scope(context.metadata.get("scope", {}))
 
         try:
             if handler_kwargs:
@@ -488,10 +496,10 @@ class AgenticApp:
                 error=str(exc),
             ), tasks
 
-        # File response passthrough: bypass AgentResponse wrapping
+        # Non-JSON response passthrough: bypass AgentResponse wrapping
         if isinstance(result, Response):
             return result, tasks
-        if isinstance(result, FileResult):
+        if isinstance(result, (FileResult, HTMLResult, PlainTextResult)):
             return result.to_response(), tasks
 
         return AgentResponse(
@@ -684,6 +692,7 @@ class AgenticApp:
                     session_id=session_id,
                     auth_user=auth_user,
                     files=uploaded_files,
+                    _scope=dict(request.scope, headers=list(request.headers.raw)),
                 )
                 # File response passthrough: return directly without JSON wrapping
                 if isinstance(response, Response):

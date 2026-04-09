@@ -6,7 +6,7 @@ AgenticAPI is a Python OSS framework that natively integrates coding agents into
 
 **In a nutshell**: FastAPI is for type-safe REST APIs. AgenticAPI is for harnessed agent APIs.
 
-**Current status**: Phase 1 v0.1.0. 80 source files, 10,375 lines of code, 666 tests, 89% coverage, 10 examples.
+**Current status**: Phase 1 v0.1.0. 81 source files, 10,613 lines of code, 713 tests, 87% coverage, 12 examples.
 
 ---
 
@@ -23,10 +23,10 @@ pip install -e ".[mcp]"          # Optional: MCP support
 ### Testing
 
 ```bash
-uv run pytest                                    # All tests
+uv run pytest                                    # All 713 tests
 uv run pytest --ignore=tests/benchmarks -q       # Skip benchmarks (faster)
 uv run pytest tests/unit/harness/ -xvs           # Specific directory
-uv run pytest --cov=src/agenticapi               # With coverage (89%)
+uv run pytest --cov=src/agenticapi               # With coverage (87%)
 uv run pytest tests/e2e/ -v                      # E2E tests for all examples
 uv run pytest tests/benchmarks/                  # Benchmarks only
 uv run pytest -m "not requires_llm"              # Skip LLM-dependent tests
@@ -50,6 +50,13 @@ uv run ruff format --check src/ tests/ && uv run ruff check src/ tests/ && uv ru
 mkdocs serve -a 127.0.0.1:8001   # Live-reloading docs
 mkdocs build                      # Static site in site/
 mkdocs gh-deploy --force          # Deploy to GitHub Pages
+```
+
+### Pre-commit
+
+```bash
+uv run pre-commit install                        # Install git hooks
+uv run pre-commit run --all-files                # Run all hooks manually
 ```
 
 ### Running Examples
@@ -131,11 +138,40 @@ See [development/modules.md](development/modules.md) for the complete module ref
 | `Authenticator` | `security.py` | Auth scheme + verify function |
 | `APIKeyHeader` | `security.py` | Extract API key from header |
 | `HTTPBearer` | `security.py` | Extract Bearer token |
-| `FileResult` | `interface/response.py` | File download helper (bytes, path, or streaming) |
+| `FileResult` | `interface/response.py` | File download wrapper (bytes, path, or streaming) |
+| `HTMLResult` | `interface/response.py` | HTML response (like FastAPI's `HTMLResponse`) |
+| `PlainTextResult` | `interface/response.py` | Plain text response |
 | `UploadFile` | `interface/upload.py` | Uploaded file data (filename, content, size) |
 | `UploadedFiles` | `interface/upload.py` | Handler param type for auto-injected uploaded files |
 | `MCPCompat` | `interface/compat/mcp.py` | MCP server (`pip install agenticapi[mcp]`) |
 | `RESTCompat` | `interface/compat/rest.py` | REST route generation |
+| `HtmxHeaders` | `interface/htmx.py` | HTMX request header detection (injected into handlers) |
+| `htmx_response_headers()` | `interface/htmx.py` | Build HTMX response headers (HX-Trigger, etc.) |
+
+### Custom Response Types
+
+Handlers can return non-JSON responses by using result wrapper types:
+
+```python
+from agenticapi import HTMLResult, PlainTextResult, FileResult
+
+# HTML page
+@app.agent_endpoint(name="dashboard")
+async def dashboard(intent, context):
+    return HTMLResult(content="<h1>Dashboard</h1><p>Welcome!</p>")
+
+# Plain text
+@app.agent_endpoint(name="status")
+async def status(intent, context):
+    return PlainTextResult(content="OK")
+
+# File download
+@app.agent_endpoint(name="export")
+async def export(intent, context):
+    return FileResult(content=b"csv,data", media_type="text/csv", filename="export.csv")
+```
+
+You can also return any Starlette `Response` subclass directly (HTMLResponse, StreamingResponse, etc.).
 
 ### AgenticApp Constructor
 
@@ -304,6 +340,8 @@ See [examples/README.md](examples/README.md) for the full examples guide.
 | `08_mcp_agent` | None | MCP server: `enable_mcp=True`, `expose_as_mcp()` |
 | `09_auth_agent` | None | Authentication: `APIKeyHeader`, `Authenticator`, `auth=` |
 | `10_file_handling` | None | File upload/download: `UploadedFiles`, `FileResult`, streaming |
+| `11_html_responses` | None | Custom responses: `HTMLResult`, `PlainTextResult`, `FileResult` |
+| `12_htmx` | None | HTMX integration: `HtmxHeaders`, partial page updates, `htmx_response_headers` |
 
 ---
 
@@ -369,6 +407,44 @@ See [examples/README.md](examples/README.md) for the full examples guide.
 3. `FileResult.content` accepts `bytes` (inline), `str` (file path), or async iterable (streaming)
 4. Handlers can also return a raw Starlette `Response` for full control
 5. Reference: `examples/10_file_handling/app.py`
+
+### Adding Custom Response Types
+
+1. Return `HTMLResult(content="<h1>Hello</h1>")` for HTML pages
+2. Return `PlainTextResult(content="OK")` for plain text
+3. Return `FileResult(content=..., media_type=..., filename=...)` for file downloads
+4. Return any Starlette `Response` subclass for full control
+5. Reference: `examples/11_html_responses/app.py`
+
+### Building HTMX Apps
+
+1. Add `HtmxHeaders` parameter to handlers: auto-injected with parsed HTMX headers
+2. Check `htmx.is_htmx` to decide between full page and fragment response
+3. Return `HTMLResult(content=fragment)` for HTMX requests
+4. Use `htmx_response_headers(trigger="event")` for client-side event triggers
+5. Reference: `examples/12_htmx/app.py`
+
+---
+
+## CI/CD
+
+### GitHub Actions (`.github/workflows/ci.yml`)
+
+| Job | Trigger | What it does |
+|---|---|---|
+| `pre-commit` | Push + PR to `main` | Runs all pre-commit hooks |
+| `lint` | Push + PR to `main` | `ruff format --check` + `ruff check` |
+| `typecheck` | Push + PR to `main` | `mypy --strict` |
+| `test` | Push + PR to `main` | `pytest` (unit + integration, excludes benchmarks and e2e), uploads coverage XML |
+| `docs` | Push to `main` only | `mkdocs gh-deploy` (after lint/typecheck/test pass) |
+
+### Pre-commit Hooks (`.pre-commit-config.yaml`)
+
+| Hook | Source | What it checks |
+|---|---|---|
+| `ruff-format` | `astral-sh/ruff-pre-commit` | Code formatting |
+| `ruff` | `astral-sh/ruff-pre-commit` | Lint with auto-fix |
+| `mypy` | `pre-commit/mirrors-mypy` | Type checking |
 
 ---
 

@@ -1,11 +1,11 @@
-"""Google Gemini powered agent example with harness safety.
+"""Google Gemini powered agent example with harness safety and custom prompts.
 
 Demonstrates:
 - GeminiBackend for LLM-powered intent parsing and code generation
+- Custom prompts: calling Gemini directly with endpoint-specific system prompts
 - HarnessEngine with CodePolicy and DataPolicy
 - DatabaseTool and CacheTool for agent-generated code
 - Session management for multi-turn conversations
-- Full pipeline: intent -> code generation -> policy check -> sandbox -> response
 
 Prerequisites:
     export GOOGLE_API_KEY="AIza..."
@@ -17,24 +17,20 @@ Or using the CLI:
     agenticapi dev --app examples.05_gemini_agent.app:app
 
 Test with curl:
-    # List open tickets
+    # List open tickets (handler-based)
     curl -X POST http://127.0.0.1:8000/agent/tickets.search \
         -H "Content-Type: application/json" \
         -d '{"intent": "Show me all open critical tickets"}'
 
-    # Get support metrics
-    curl -X POST http://127.0.0.1:8000/agent/tickets.metrics \
+    # LLM-powered root cause analysis (custom prompt)
+    curl -X POST http://127.0.0.1:8000/agent/tickets.analyze \
         -H "Content-Type: application/json" \
-        -d '{"intent": "What is the average resolution time by severity?"}'
+        -d '{"intent": "What patterns do you see in the auth-related tickets?"}'
 
-    # Multi-turn with session
-    curl -X POST http://127.0.0.1:8000/agent/tickets.search \
+    # LLM-powered customer response draft (custom prompt)
+    curl -X POST http://127.0.0.1:8000/agent/tickets.draft_response \
         -H "Content-Type: application/json" \
-        -d '{"intent": "Show billing tickets", "session_id": "sess1"}'
-
-    curl -X POST http://127.0.0.1:8000/agent/tickets.search \
-        -H "Content-Type: application/json" \
-        -d '{"intent": "Which of those are still unresolved?", "session_id": "sess1"}'
+        -d '{"intent": "Draft a customer reply for the billing overcharge ticket"}'
 
     # Health check
     curl http://127.0.0.1:8000/health
@@ -42,6 +38,7 @@ Test with curl:
 
 from __future__ import annotations
 
+import json as _json
 from typing import TYPE_CHECKING, Any
 
 from agenticapi.app import AgenticApp
@@ -51,6 +48,7 @@ from agenticapi.harness.policy.data_policy import DataPolicy
 from agenticapi.interface.intent import Intent, IntentScope
 from agenticapi.interface.response import AgentResponse
 from agenticapi.routing import AgentRouter
+from agenticapi.runtime.llm.base import LLMMessage, LLMPrompt
 from agenticapi.runtime.llm.gemini import GeminiBackend
 from agenticapi.runtime.tools.cache import CacheTool
 from agenticapi.runtime.tools.database import DatabaseTool
@@ -304,6 +302,64 @@ async def ticket_metrics(intent: Intent, context: AgentContext) -> AgentResponse
         },
         reasoning=f"Support metrics across {total} tickets, avg resolution {avg_resolution}h",
     )
+
+
+# ---------------------------------------------------------------------------
+# Custom prompt endpoints — call Gemini directly with specific prompts
+# ---------------------------------------------------------------------------
+
+
+@tickets_router.agent_endpoint(
+    name="analyze",
+    description="LLM-powered root cause analysis of ticket patterns",
+    intent_scope=IntentScope(allowed_intents=["*"]),
+    autonomy_level="manual",  # bypass harness — handler calls LLM directly
+)
+async def ticket_analyze(intent: Intent, context: AgentContext) -> dict[str, Any]:
+    """Call Gemini with a custom prompt for ticket pattern analysis."""
+    ticket_data = _json.dumps(TICKETS, indent=2)
+    prompt = LLMPrompt(
+        system=(
+            "You are a senior support engineer. Analyze the ticket data to identify "
+            "patterns, root causes, and trends. Focus on what the user asks about. "
+            "Be specific and actionable. Keep your response to 3-4 sentences."
+        ),
+        messages=[
+            LLMMessage(role="user", content=f"Tickets:\n{ticket_data}\n\nAnalysis request: {intent.raw}"),
+        ],
+        temperature=0.3,
+        max_tokens=512,
+    )
+
+    response = await llm.generate(prompt)
+    return {"analysis": response.content, "model": llm.model_name}
+
+
+@tickets_router.agent_endpoint(
+    name="draft_response",
+    description="LLM-powered customer response draft for a ticket",
+    intent_scope=IntentScope(allowed_intents=["*"]),
+    autonomy_level="manual",  # bypass harness — handler calls LLM directly
+)
+async def ticket_draft_response(intent: Intent, context: AgentContext) -> dict[str, Any]:
+    """Call Gemini with a custom prompt to draft a customer-facing reply."""
+    ticket_data = _json.dumps(TICKETS, indent=2)
+    prompt = LLMPrompt(
+        system=(
+            "You are a friendly customer support agent. Draft a professional, "
+            "empathetic reply to the customer for the ticket the user mentions. "
+            "Acknowledge the issue, explain what's being done, and give a timeline. "
+            "Keep it concise (3-5 sentences)."
+        ),
+        messages=[
+            LLMMessage(role="user", content=f"Tickets:\n{ticket_data}\n\nDraft a response for: {intent.raw}"),
+        ],
+        temperature=0.5,
+        max_tokens=256,
+    )
+
+    response = await llm.generate(prompt)
+    return {"draft": response.content, "model": llm.model_name}
 
 
 # ---------------------------------------------------------------------------
