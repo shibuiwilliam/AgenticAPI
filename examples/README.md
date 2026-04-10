@@ -1,6 +1,6 @@
 # AgenticAPI Examples
 
-Twelve example apps demonstrating AgenticAPI features, from a minimal hello-world to interactive HTMX web apps. Each example is a standalone ASGI application that can be run with uvicorn.
+Thirteen example apps demonstrating AgenticAPI features, from a minimal hello-world to interactive HTMX web apps and a full Claude Agent SDK loop. Each example is a standalone ASGI application that can be run with uvicorn.
 
 Every example automatically serves interactive API docs at `http://127.0.0.1:8000/docs` (Swagger UI) and `http://127.0.0.1:8000/redoc` (ReDoc).
 
@@ -20,6 +20,7 @@ Every example automatically serves interactive API docs at `http://127.0.0.1:800
 | [10_file_handling](#10-file-handling) | Files | No | Upload: `UploadedFiles`, download: `FileResult`, streaming |
 | [11_html_responses](#11-html-responses) | Pages | No | `HTMLResult`, `PlainTextResult`, `FileResult`, mixed endpoints |
 | [12_htmx](#12-htmx) | Todo app | No | `HtmxHeaders`, `htmx_response_headers`, partial updates |
+| [13_claude_agent_sdk](#13-claude-agent-sdk) | Assistant + audit | `ANTHROPIC_API_KEY` (optional) | Full Claude Agent SDK loop via `agenticapi-claude-agent-sdk` extension |
 
 ## Running Examples
 
@@ -33,7 +34,7 @@ agenticapi dev --app examples.01_hello_agent.app:app
 uvicorn examples.01_hello_agent.app:app --reload
 ```
 
-Examples 01, 02, 08-12 require no API keys. Examples 03-05 require a specific LLM provider's API key. Examples 06 and 07 let you choose a provider via `AGENTICAPI_LLM_PROVIDER` and fall back to direct-handler mode when no key is set. Example 08 requires `pip install agenticapi[mcp]`.
+Examples 01, 02, 08-12 require no API keys. Examples 03-05 require a specific LLM provider's API key. Examples 06 and 07 let you choose a provider via `AGENTICAPI_LLM_PROVIDER` and fall back to direct-handler mode when no key is set. Example 08 requires `pip install agenticapi[mcp]`. Example 13 requires `pip install agenticapi-claude-agent-sdk` and (for live calls) `ANTHROPIC_API_KEY` — without them it imports cleanly and the `assistant.audit` endpoint still works.
 
 ---
 
@@ -614,6 +615,68 @@ curl -X POST http://127.0.0.1:8000/agent/todo.search \
 | `POST /agent/todo.list` | Full page or todo list fragment | `text/html` |
 | `POST /agent/todo.add` | Add a todo, return updated list | `text/html` fragment |
 | `POST /agent/todo.search` | Search todos, return filtered list | `text/html` fragment |
+
+---
+
+## 13 Claude Agent SDK
+
+A demo of the **`agenticapi-claude-agent-sdk`** extension, which runs the full Claude Agent SDK loop (planning + tool use + reflection) inside an AgenticAPI endpoint while preserving AgenticAPI's harness guarantees: declarative policies, an audit trail, and a tool registry exposed to the model as MCP tools.
+
+The example wires up a `ClaudeAgentRunner` with a `CodePolicy`, an in-process AgenticAPI tool (`FaqTool`), and an `AuditRecorder`. It also degrades gracefully when the extension or `ANTHROPIC_API_KEY` is missing — the app still imports, the `assistant.audit` endpoint still works, and `assistant.ask` returns a structured error explaining how to install the extension.
+
+**Features demonstrated:** `ClaudeAgentRunner` (the high-level extension entry point), AgenticAPI `Tool` → SDK MCP tool bridge, `CodePolicy` policies bridged into the SDK permission system, `AuditRecorder` capturing every runner session, `autonomy_level="manual"` to delegate execution entirely to the runner, graceful degradation when the extension is missing.
+
+**Prerequisites (optional but recommended):**
+
+```bash
+pip install agenticapi-claude-agent-sdk
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+```bash
+uvicorn examples.13_claude_agent_sdk.app:app --reload
+```
+
+```bash
+# Ask the agent something — full Claude SDK loop, with the FaqTool wired in
+curl -X POST http://127.0.0.1:8000/agent/assistant.ask \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "What is the AgenticAPI harness?"}'
+
+# Inspect the audit trail produced by previous runs
+curl -X POST http://127.0.0.1:8000/agent/assistant.audit \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Show recent traces"}'
+
+# Health check
+curl http://127.0.0.1:8000/health
+```
+
+**Endpoints:**
+| Endpoint | Description | Autonomy |
+|---|---|---|
+| `POST /agent/assistant.ask` | Run a full Claude Agent SDK session for the intent | manual |
+| `POST /agent/assistant.audit` | Read the in-memory audit trail of past runs | auto |
+
+**`assistant.ask` response shape:**
+
+```json
+{
+  "status": "completed",
+  "result": {
+    "answer": "...",
+    "ok": true,
+    "reasoning": "...",
+    "generated_code": null,
+    "execution_trace_id": "...",
+    "error": null
+  }
+}
+```
+
+When the extension is not installed, `result.ok` is `false`, `result.error` is `"extension_not_installed"`, and `result.message` explains how to install it.
+
+See the extension's own [README](../extensions/agenticapi-claude-agent-sdk/README.md) for the full configuration surface and design notes.
 
 ---
 

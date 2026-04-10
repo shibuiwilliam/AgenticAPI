@@ -1,10 +1,14 @@
 # Module Reference
 
-## Source Structure (81 files, 10,613 lines)
+## Source Structure (81 files, 10,609 lines)
+
+The package ships a `py.typed` marker (PEP 561) so downstream mypy users pick up the inline type annotations.
+
 
 ```
 src/agenticapi/
     __init__.py              Public API exports (48 symbols)
+    py.typed                 PEP 561 marker (ships type info to downstream users)
     app.py                   AgenticApp — main ASGI application (844 lines)
     routing.py               AgentRouter — endpoint grouping with prefix/tags
     types.py                 AutonomyLevel, TraceLevel, Severity enums; JSON/Headers type aliases

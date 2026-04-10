@@ -37,9 +37,20 @@ AgenticAPI installs the following core dependencies:
 ## Optional Dependencies
 
 ```bash
-# MCP support
+# MCP support (lightweight optional extra)
 pip install agenticapi[mcp]
 ```
+
+## Extensions
+
+Heavyweight integrations are released as separate packages:
+
+```bash
+# Claude Agent SDK (full agentic loop with policies and audit)
+pip install agenticapi-claude-agent-sdk
+```
+
+See the [Extensions guide](../development/extensions.md) for the full list and how to build your own.
 
 ## Verify Installation
 

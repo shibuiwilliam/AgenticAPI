@@ -39,7 +39,7 @@ uvicorn myapp:app --reload
 - **Approval workflows** — Human-in-the-loop for sensitive operations
 - **ASGI-native** — Built on Starlette, runs on uvicorn
 
-**Current status:** 81 source files, 10,613 lines of code, 713 tests, 88% coverage, 12 examples.
+**Current status:** 81 source files, 10,609 lines of code, 713 tests, 88% coverage, 12 examples, 1 extension.
 
 ## Quick Links
 
@@ -49,5 +49,7 @@ uvicorn myapp:app --reload
 - [Architecture](guides/architecture.md)
 - [Authentication](guides/authentication.md)
 - [File Handling](guides/file-handling.md)
+- [HTMX Support](guides/htmx.md)
+- [Extensions](development/extensions.md) — Claude Agent SDK and more
 - [API Reference](api/app.md)
 - [GitHub Repository](https://github.com/shibuiwilliam/AgenticAPI)

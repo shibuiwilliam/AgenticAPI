@@ -20,6 +20,18 @@ The `test` job excludes:
 - `tests/benchmarks/` — Performance benchmarks (not deterministic in CI)
 - `tests/e2e/` — End-to-end tests (may require LLM API keys or example-specific setup)
 
+### Extensions Are Not Yet Wired into CI
+
+The root workflow tests and type-checks only the core package under `src/`. Extension packages under `extensions/<name>/` have their own tests (offline, stubbed) but are currently run manually:
+
+```bash
+uv pip install -e extensions/agenticapi-claude-agent-sdk --no-deps
+uv run pytest extensions/agenticapi-claude-agent-sdk/tests
+uv run mypy extensions/agenticapi-claude-agent-sdk/src
+```
+
+A follow-up will add a matrix `extensions` job that iterates over each extension directory.
+
 ### Concurrency
 
 ```yaml
@@ -74,9 +86,9 @@ The mypy hook includes `additional_dependencies` for all core and optional packa
 
 | Target | Command | Description |
 |---|---|---|
-| `make format` | `ruff format src/ tests/` | Auto-format code |
-| `make lint` | `ruff check src/ tests/` | Run linter |
-| `make lint-fix` | `ruff check --fix src/ tests/` | Lint with auto-fix |
+| `make format` | `ruff format src/ tests/ examples/` | Auto-format code |
+| `make lint` | `ruff check src/ tests/ examples/` | Run linter |
+| `make lint-fix` | `ruff check --fix src/ tests/ examples/` | Lint with auto-fix |
 | `make fix` | `format` + `lint-fix` | All auto-fixable checks |
 | `make typecheck` | `mypy src/agenticapi/` | Type checking |
 | `make check` | `format --check` + `lint` + `typecheck` | All quality checks (no auto-fix) |

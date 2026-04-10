@@ -953,3 +953,264 @@ class TestExample12Htmx:
         )
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
+
+
+# ============================================================================
+# 13_claude_agent_sdk (requires the agenticapi-claude-agent-sdk extension)
+# ============================================================================
+
+try:
+    import agenticapi_claude_agent_sdk  # noqa: F401
+
+    _has_claude_sdk_extension = True
+except ImportError:
+    _has_claude_sdk_extension = False
+
+
+def _install_stub_claude_agent_sdk() -> None:
+    """Install a minimal stub of ``claude_agent_sdk`` in ``sys.modules``.
+
+    The example app's ``ClaudeAgentRunner`` lazily imports the real SDK on
+    first ``run()`` call. By installing a fake module before the test
+    fires the runner, we can drive a deterministic message stream and
+    avoid hitting the network or requiring an API key.
+
+    Mirrors the more elaborate stub used by the extension's own offline
+    tests in ``extensions/agenticapi-claude-agent-sdk/tests/conftest.py``.
+    """
+    import sys
+    from dataclasses import dataclass, field
+    from types import ModuleType
+    from typing import Any as _Any
+
+    @dataclass
+    class _TextBlock:
+        text: str
+
+    @dataclass
+    class _ThinkingBlock:
+        thinking: str
+        signature: str = ""
+
+    @dataclass
+    class _ToolUseBlock:
+        id: str
+        name: str
+        input: dict[str, _Any]
+
+    @dataclass
+    class _ToolResultBlock:
+        tool_use_id: str
+        content: _Any = None
+        is_error: bool | None = None
+
+    @dataclass
+    class _AssistantMessage:
+        content: list[_Any]
+        model: str = "stub-model"
+        parent_tool_use_id: str | None = None
+
+    @dataclass
+    class _UserMessage:
+        content: list[_Any]
+
+    @dataclass
+    class _SystemMessage:
+        subtype: str
+        data: dict[str, _Any]
+
+    @dataclass
+    class _ResultMessage:
+        subtype: str = "success"
+        duration_ms: int = 5
+        duration_api_ms: int = 1
+        is_error: bool = False
+        num_turns: int = 1
+        session_id: str = "stub-session"
+        result: str | None = "Stubbed answer."
+        structured_output: _Any = None
+        total_cost_usd: float | None = 0.0
+        usage: dict[str, _Any] | None = None
+        errors: list[str] | None = None
+
+    # Force the names the messages adapter dispatches on:
+    _TextBlock.__name__ = "TextBlock"
+    _ThinkingBlock.__name__ = "ThinkingBlock"
+    _ToolUseBlock.__name__ = "ToolUseBlock"
+    _ToolResultBlock.__name__ = "ToolResultBlock"
+    _AssistantMessage.__name__ = "AssistantMessage"
+    _UserMessage.__name__ = "UserMessage"
+    _SystemMessage.__name__ = "SystemMessage"
+    _ResultMessage.__name__ = "ResultMessage"
+
+    @dataclass
+    class _PermissionResultAllow:
+        behavior: str = "allow"
+        updated_input: dict[str, _Any] | None = None
+        updated_permissions: list[_Any] | None = None
+
+    @dataclass
+    class _PermissionResultDeny:
+        behavior: str = "deny"
+        message: str = ""
+        interrupt: bool = False
+
+    @dataclass
+    class _HookMatcher:
+        matcher: str | None = None
+        hooks: list[_Any] = field(default_factory=list)
+        timeout: float | None = None
+
+    @dataclass
+    class _ClaudeAgentOptions:
+        allowed_tools: list[str] = field(default_factory=list)
+        disallowed_tools: list[str] = field(default_factory=list)
+        permission_mode: str = "default"
+        system_prompt: str | None = None
+        model: str | None = None
+        max_turns: int | None = None
+        cwd: _Any = None
+        env: dict[str, str] = field(default_factory=dict)
+        mcp_servers: dict[str, _Any] = field(default_factory=dict)
+        can_use_tool: _Any = None
+        hooks: dict[str, _Any] | None = None
+
+    @dataclass
+    class _SdkMcpTool:
+        name: str
+        description: str
+        input_schema: _Any
+        handler: _Any
+
+    @dataclass
+    class _McpSdkServerConfig:
+        name: str
+        version: str
+        tools: list[_SdkMcpTool]
+
+    def _stub_query(*, prompt: _Any, options: _Any = None, transport: _Any = None) -> _Any:
+        del prompt, options, transport
+
+        async def _stream() -> _Any:
+            yield _AssistantMessage(content=[_TextBlock(text="Stubbed answer.")])
+            yield _ResultMessage(result="Stubbed answer.")
+
+        return _stream()
+
+    def _stub_tool(name: str, description: str, input_schema: _Any) -> _Any:
+        def _decorate(handler: _Any) -> _SdkMcpTool:
+            return _SdkMcpTool(
+                name=name,
+                description=description,
+                input_schema=input_schema,
+                handler=handler,
+            )
+
+        return _decorate
+
+    def _stub_create_sdk_mcp_server(
+        name: str,
+        version: str = "1.0.0",
+        tools: list[_SdkMcpTool] | None = None,
+    ) -> _McpSdkServerConfig:
+        return _McpSdkServerConfig(name=name, version=version, tools=list(tools or []))
+
+    module = ModuleType("claude_agent_sdk")
+    module.query = _stub_query  # type: ignore[attr-defined]
+    module.tool = _stub_tool  # type: ignore[attr-defined]
+    module.create_sdk_mcp_server = _stub_create_sdk_mcp_server  # type: ignore[attr-defined]
+    module.ClaudeAgentOptions = _ClaudeAgentOptions  # type: ignore[attr-defined]
+    module.PermissionResultAllow = _PermissionResultAllow  # type: ignore[attr-defined]
+    module.PermissionResultDeny = _PermissionResultDeny  # type: ignore[attr-defined]
+    module.HookMatcher = _HookMatcher  # type: ignore[attr-defined]
+    module.AssistantMessage = _AssistantMessage  # type: ignore[attr-defined]
+    module.UserMessage = _UserMessage  # type: ignore[attr-defined]
+    module.SystemMessage = _SystemMessage  # type: ignore[attr-defined]
+    module.ResultMessage = _ResultMessage  # type: ignore[attr-defined]
+    module.TextBlock = _TextBlock  # type: ignore[attr-defined]
+    module.ThinkingBlock = _ThinkingBlock  # type: ignore[attr-defined]
+    module.ToolUseBlock = _ToolUseBlock  # type: ignore[attr-defined]
+    module.ToolResultBlock = _ToolResultBlock  # type: ignore[attr-defined]
+    sys.modules["claude_agent_sdk"] = module
+
+
+@pytest.mark.skipif(
+    not _has_claude_sdk_extension,
+    reason="agenticapi-claude-agent-sdk extension is not installed",
+)
+class TestExample13ClaudeAgentSDK:
+    """End-to-end tests for the Claude Agent SDK extension example.
+
+    These tests do not call the real Claude API. Tests that need the
+    runner to actually run install a stub ``claude_agent_sdk`` module
+    in ``sys.modules`` and reset the extension's lazy-import cache so
+    the runner picks the stub up. Tests that only need ``/health``,
+    ``/capabilities``, or the ``assistant.audit`` endpoint don't need
+    the stub at all.
+    """
+
+    @pytest.fixture
+    def client(self) -> TestClient:
+        app = _load_app("examples.13_claude_agent_sdk.app")
+        return TestClient(app)
+
+    @pytest.fixture
+    def stubbed_client(self) -> TestClient:
+        """A client whose runner is wired up to a stub ``claude_agent_sdk``."""
+        _install_stub_claude_agent_sdk()
+        from agenticapi_claude_agent_sdk import _imports as _ext_imports
+
+        _ext_imports._reset_cache_for_tests()
+        # Force a fresh import of the example so the runner is rebuilt
+        # against the stub module that's now in sys.modules.
+        import sys
+
+        sys.modules.pop("examples.13_claude_agent_sdk.app", None)
+        app = _load_app("examples.13_claude_agent_sdk.app")
+        return TestClient(app)
+
+    def test_health(self, client: TestClient) -> None:
+        data = _assert_health_ok(client)
+        assert "assistant.ask" in data["endpoints"]
+        assert "assistant.audit" in data["endpoints"]
+
+    def test_capabilities_lists_both_endpoints(self, client: TestClient) -> None:
+        response = client.get("/capabilities")
+        assert response.status_code == 200
+        data = response.json()
+        names = {ep["name"] for ep in data["endpoints"]}
+        assert {"assistant.ask", "assistant.audit"}.issubset(names)
+
+    def test_audit_endpoint_works_without_calling_sdk(self, client: TestClient) -> None:
+        """The audit endpoint reads from the in-memory recorder only."""
+        data = _post_intent(client, "assistant.audit", "Show recent traces")
+        assert data["status"] == "completed"
+        result = data["result"]
+        assert "extension_installed" in result
+        assert "trace_count" in result
+        assert isinstance(result["recent"], list)
+
+    def test_ask_endpoint_runs_with_stubbed_sdk(self, stubbed_client: TestClient) -> None:
+        """The ``ask`` endpoint drives the runner against a stub SDK."""
+        data = _post_intent(stubbed_client, "assistant.ask", "Tell me about AgenticAPI")
+        # The stub returns a fixed answer; the example handler unwraps the
+        # runner's AgentResponse into a plain dict for nicer JSON output.
+        assert data["status"] == "completed"
+        result = data["result"]
+        assert result["ok"] is True
+        assert result["answer"] == "Stubbed answer."
+        assert result["error"] is None
+
+    def test_ask_endpoint_records_audit_trace(self, stubbed_client: TestClient) -> None:
+        """Calling ``ask`` should add a trace visible to ``audit``."""
+        # Drive at least one ask call so the recorder has a record.
+        _post_intent(stubbed_client, "assistant.ask", "Hello")
+        audit_data = _post_intent(stubbed_client, "assistant.audit", "Show traces")
+        result = audit_data["result"]
+        assert result["trace_count"] >= 1
+        assert result["recent"][-1]["endpoint"] == "assistant.ask"
+        assert result["recent"][-1]["error"] is None
+
+    def test_missing_intent_returns_400(self, client: TestClient) -> None:
+        response = client.post("/agent/assistant.ask", json={"no_intent": "oops"})
+        assert response.status_code == 400

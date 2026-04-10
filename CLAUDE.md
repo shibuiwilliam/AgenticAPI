@@ -6,7 +6,7 @@ AgenticAPI is a Python OSS framework that natively integrates coding agents into
 
 **In a nutshell**: FastAPI is for type-safe REST APIs. AgenticAPI is for harnessed agent APIs.
 
-**Current status**: Phase 1 v0.1.0. 81 source files, 10,613 lines of code, 713 tests, 87% coverage, 12 examples.
+**Current status**: Phase 1 v0.1.0. Core: 81 source files, 10,609 LOC, 713 tests, 87% coverage, 12 examples. Extensions: `agenticapi-claude-agent-sdk` v0.1.0 (1,610 src LOC, 38 tests).
 
 ---
 
@@ -23,11 +23,11 @@ pip install -e ".[mcp]"          # Optional: MCP support
 ### Testing
 
 ```bash
-uv run pytest                                    # All 713 tests
+uv run pytest                                    # All 713 tests (613 unit+integration + 100 e2e)
 uv run pytest --ignore=tests/benchmarks -q       # Skip benchmarks (faster)
 uv run pytest tests/unit/harness/ -xvs           # Specific directory
 uv run pytest --cov=src/agenticapi               # With coverage (87%)
-uv run pytest tests/e2e/ -v                      # E2E tests for all examples
+uv run pytest tests/e2e/ -v                      # E2E tests for all 12 example apps
 uv run pytest tests/benchmarks/                  # Benchmarks only
 uv run pytest -m "not requires_llm"              # Skip LLM-dependent tests
 ```
@@ -35,13 +35,13 @@ uv run pytest -m "not requires_llm"              # Skip LLM-dependent tests
 ### Code Quality
 
 ```bash
-uv run ruff format src/ tests/                   # Format
-uv run ruff check src/ tests/                    # Lint
-uv run ruff check --fix src/ tests/              # Lint + auto-fix
+uv run ruff format src/ tests/ examples/         # Format (examples included)
+uv run ruff check src/ tests/ examples/          # Lint
+uv run ruff check --fix src/ tests/ examples/    # Lint + auto-fix
 uv run mypy src/agenticapi/                      # Type check (strict)
 
 # Full CI check:
-uv run ruff format --check src/ tests/ && uv run ruff check src/ tests/ && uv run mypy src/agenticapi/ && uv run pytest --ignore=tests/benchmarks
+uv run ruff format --check src/ tests/ examples/ && uv run ruff check src/ tests/ examples/ && uv run mypy src/agenticapi/ && uv run pytest --ignore=tests/benchmarks
 ```
 
 ### Documentation
@@ -68,6 +68,35 @@ agenticapi dev --app examples.08_mcp_agent.app:app            # MCP server
 agenticapi dev --app examples.09_auth_agent.app:app           # Authentication
 agenticapi console --app examples.02_ecommerce.app:app        # Interactive REPL
 ```
+
+### Extensions
+
+Independently-installable extensions live under `extensions/<name>/`
+with their own `pyproject.toml`. Large or fast-moving dependencies
+stay out of the core package and live in extension packages so users
+only pay for what they use.
+
+**Current extensions:**
+
+| Extension | Purpose | Deps |
+|---|---|---|
+| `agenticapi-claude-agent-sdk` | Wraps the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) for full planning + tool-use loops inside agent endpoints | `claude-agent-sdk>=0.1.58,<0.2` |
+
+```bash
+# Install the extension for development (no-deps so main package stays linked)
+uv pip install -e extensions/agenticapi-claude-agent-sdk --no-deps
+
+# Run extension tests (offline — uses a stub SDK module via conftest.py)
+uv run pytest extensions/agenticapi-claude-agent-sdk/tests
+
+# Type-check the extension
+uv run mypy extensions/agenticapi-claude-agent-sdk/src
+```
+
+See:
+- [development/extensions.md](development/extensions.md) — Extensions architecture and contribution guide
+- [development/claude_agent_sdk_extension_plan.md](development/claude_agent_sdk_extension_plan.md) — Claude Agent SDK extension design rationale
+- [extensions/agenticapi-claude-agent-sdk/README.md](extensions/agenticapi-claude-agent-sdk/README.md) — User-facing docs
 
 ---
 
@@ -424,7 +453,28 @@ See [examples/README.md](examples/README.md) for the full examples guide.
 4. Use `htmx_response_headers(trigger="event")` for client-side event triggers
 5. Reference: `examples/12_htmx/app.py`
 
----
+### Creating a New Extension Package
+
+Extensions live under `extensions/<package-name>/` with their own `pyproject.toml` and are published separately from core.
+
+1. Create `extensions/my-extension/` with this layout:
+   ```
+   extensions/my-extension/
+       pyproject.toml
+       README.md
+       src/my_extension/
+           __init__.py        # Public API via __all__
+           py.typed           # PEP 561 marker
+       tests/
+           conftest.py        # Stub optional heavy deps if needed
+           test_*.py
+       examples/
+   ```
+2. `pyproject.toml`: depend on `agenticapi>=0.1.0` plus whatever heavy/fast-moving library you're wrapping. Pin carefully (e.g., `>=X.Y,<X.Y+1`).
+3. Use **lazy imports** for the wrapped library so `import my_extension` never fails even when the optional dep is absent. Raise a friendly `*NotInstalledError` on first use.
+4. Tests must run **offline**: install a stub module in `conftest.py` that mimics the wrapped library's public surface.
+5. Errors should inherit from `agenticapi.AgenticAPIError` so callers can catch both core and extension errors uniformly.
+6. Reference: `extensions/agenticapi-claude-agent-sdk/` and `development/extensions.md`.
 
 ## CI/CD
 

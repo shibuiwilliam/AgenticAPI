@@ -111,3 +111,4 @@ nav:
   - Development:
     - Contributing: development/contributing.md
     - Module Reference: development/modules.md
+    - Extensions: development/extensions.md

@@ -95,6 +95,26 @@ src/agenticapi/
         console.py           Interactive REPL console
 ```
 
+## Extensions
+
+Heavyweight integrations live in the top-level `extensions/` directory as separate, independently-versioned packages. They are NOT part of the core `agenticapi` package.
+
+```
+extensions/
+    agenticapi-claude-agent-sdk/    Claude Agent SDK runner with policy bridging
+        pyproject.toml              Independent package
+        src/agenticapi_claude_agent_sdk/
+            runner.py               ClaudeAgentRunner — full agentic loop in an endpoint
+            backend.py              ClaudeAgentSDKBackend — LLMBackend adapter
+            permissions.py          HarnessPermissionAdapter — policies → SDK can_use_tool
+            tools.py                build_sdk_mcp_server_from_registry
+            messages.py             collect_session, stream_session_events
+            options.py              SDK options builders
+            exceptions.py           ClaudeAgentSDKError, ClaudeAgentSDKNotInstalledError
+```
+
+See the [Extensions guide](extensions.md) for installation and how to build your own.
+
 ## Exception Hierarchy
 
 ```

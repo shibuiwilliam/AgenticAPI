@@ -69,7 +69,32 @@ test(sandbox): add benchmark for ProcessSandbox startup
 refactor(runtime): extract prompt building into separate module
 ```
 
-Scopes: `interface`, `harness`, `runtime`, `application`, `ops`, `cli`, `testing`, `deps`, `docs`
+Scopes: `interface`, `harness`, `runtime`, `application`, `ops`, `cli`, `testing`, `deps`, `docs`, `extensions`
+
+## Pre-commit Hooks
+
+Pre-commit hooks run `ruff format`, `ruff check`, and `mypy` automatically before each commit:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+The hook config lives at `.pre-commit-config.yaml`. Hooks check `src/`, `tests/`, and `examples/`.
+
+## Working on Extensions
+
+Extensions live under `extensions/<name>/` as independent packages. To work on an extension:
+
+```bash
+cd extensions/agenticapi-claude-agent-sdk
+uv sync --extra dev
+uv run pytest
+uv run ruff check src tests
+uv run mypy src
+```
+
+See the [Extensions guide](extensions.md) for the full structure and conventions.
 
 ## Building Docs
 

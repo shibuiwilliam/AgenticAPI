@@ -8,9 +8,29 @@
 install: ## Install the package with dev dependencies
 	pip install -e ".[dev]"
 
+.PHONY: install-all
+install-all: ## Install everything: package, all optional extras, dev + docs groups, and all extensions
+	pip install -e ".[mcp]" --group dev --group docs
+	@for ext in extensions/*/; do \
+		if [ -f "$$ext/pyproject.toml" ]; then \
+			echo "Installing extension: $$ext"; \
+			pip install -e "$$ext"; \
+		fi; \
+	done
+
 .PHONY: sync
 sync: ## Sync dependencies (uv)
 	uv sync --group dev
+
+.PHONY: sync-all
+sync-all: ## Sync all groups (dev + docs) and install all extensions
+	uv sync --all-groups --all-extras
+	@for ext in extensions/*/; do \
+		if [ -f "$$ext/pyproject.toml" ]; then \
+			echo "Installing extension: $$ext"; \
+			uv pip install -e "$$ext"; \
+		fi; \
+	done
 
 .PHONY: pre-commit-install
 pre-commit-install: ## Install pre-commit hooks

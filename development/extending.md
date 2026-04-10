@@ -277,3 +277,21 @@ Reference: `examples/12_htmx/app.py`
 4. Only `enable_mcp=True` endpoints become MCP tools
 5. Test: `npx @modelcontextprotocol/inspector http://localhost:8000/mcp`
 6. Reference: `examples/08_mcp_agent/app.py`
+
+## Creating a New Extension Package
+
+Extensions are independently-installable packages under `extensions/<name>/` that wrap third-party libraries without bloating the core dependency graph.
+
+High-level steps:
+
+1. Create `extensions/<pkg-name>/` with its own `pyproject.toml`, `src/<pkg>/__init__.py`, `tests/conftest.py`, and `README.md`
+2. Depend on `agenticapi>=0.1.0` and pin the wrapped library (`>=X.Y,<X.Y+1`)
+3. Use **lazy imports** for the wrapped library (see `_imports.py` pattern in `agenticapi-claude-agent-sdk`)
+4. Make all errors inherit from `agenticapi.AgenticAPIError`
+5. Stub the wrapped library in `tests/conftest.py` so tests run offline
+6. Ship `py.typed` in the package directory (PEP 561)
+7. Document the public API in `README.md` and reference the extension from `development/extensions.md`
+
+Full specification: see [development/extensions.md](extensions.md).
+
+Reference implementation: `extensions/agenticapi-claude-agent-sdk/`

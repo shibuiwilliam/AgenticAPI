@@ -2,6 +2,8 @@
 
 ## Test Suite Overview
 
+### Core Package (`tests/`)
+
 | Category | Files | Tests | Purpose |
 |---|---|---|---|
 | Unit tests | 51 | ~613 | Individual module correctness |
@@ -9,6 +11,14 @@
 | E2E tests | 2 | ~100 | Full HTTP request cycle + all 12 example apps |
 | Benchmarks | 4 | 10 | Performance regression detection |
 | **Total** | **67** | **713** | **87% code coverage** |
+
+### Extension Tests
+
+Extensions under `extensions/<name>/tests/` maintain their own suites with stubbed dependencies so they run offline.
+
+| Extension | Test files | Tests | Notes |
+|---|---|---|---|
+| `agenticapi-claude-agent-sdk` | 7 | 38 | Uses a stub `claude_agent_sdk` module installed by `conftest.py`; no network or real SDK required |
 
 ## Running Tests
 
@@ -41,6 +51,10 @@ make test-unit      # Unit only
 make test-e2e       # E2E only
 make test-benchmark # Benchmarks only
 make ci             # Full CI: lint + typecheck + test
+
+# Extension tests (run manually — not yet in root CI)
+uv pip install -e extensions/agenticapi-claude-agent-sdk --no-deps
+uv run pytest extensions/agenticapi-claude-agent-sdk/tests
 ```
 
 ## Test Patterns
