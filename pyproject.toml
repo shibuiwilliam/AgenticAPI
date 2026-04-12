@@ -1,10 +1,24 @@
 [project]
-name = "agenticapi"
+name = "agentharnessapi"
 version = "0.1.0"
 description = "Agent-native web framework with harness engineering for Python"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.13"
+authors = [
+    {name = "shibuiwilliam", email = "shibuiyusuke@gmail.com"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Typing :: Typed",
+]
+keywords = ["agent", "ai", "llm", "harness", "framework", "fastapi", "async", "openapi"]
 dependencies = [
     "anthropic>=0.89.0",
     "google-genai>=1.70.0",
@@ -35,6 +49,13 @@ docs = [
     "mkdocs-material>=9.6.0",
     "mkdocstrings[python]>=0.29.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/shibuiwilliam/AgenticAPI"
+Documentation = "https://shibuiwilliam.github.io/AgenticAPI/"
+Repository = "https://github.com/shibuiwilliam/AgenticAPI"
+Issues = "https://github.com/shibuiwilliam/AgenticAPI/issues"
+Changelog = "https://github.com/shibuiwilliam/AgenticAPI/blob/main/IMPLEMENTATION_LOG.md"
 
 [project.scripts]
 agenticapi = "agenticapi.cli.main:cli"

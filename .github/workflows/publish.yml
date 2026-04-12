@@ -4,7 +4,7 @@
 #   1. Go to https://pypi.org → Account Settings → Publishing →
 #      "Add a new pending publisher"
 #   2. Fill in:
-#        PyPI project name:  agenticapi
+#        PyPI project name:  agentharnessapi
 #        Owner:              shibuiwilliam
 #        Repository:         AgenticAPI
 #        Workflow name:      publish.yml
