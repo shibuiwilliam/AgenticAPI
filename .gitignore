@@ -208,3 +208,10 @@ __marimo__/
 
 .DS_Store
 .claude/
+
+harness_playground_audit.sqlite
+agenticapi_memory_demo.sqlite
+VISION.md
+IMPLEMENTATION_LOG.md
+ROADMAP.md
+SECURITY.md
