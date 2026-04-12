@@ -804,12 +804,8 @@ make docs    # Live-reloading docs at http://127.0.0.1:8001
 | File | Purpose |
 |---|---|
 | [`PROJECT.md`](./PROJECT.md) | Stable product vision, design principles, architecture pillars |
-| [`ROADMAP.md`](./ROADMAP.md) | Single source of execution truth -- shipped / active / deferred |
-| [`VISION.md`](./VISION.md) | Speculative forward tracks (Agent Mesh, Hardened Trust, Self-Improving Flywheel) |
 | [`CLAUDE.md`](./CLAUDE.md) | Developer guide -- commands, conventions, module map |
-| [`IMPLEMENTATION_LOG.md`](./IMPLEMENTATION_LOG.md) | Append-only log of shipped increments |
 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) | Contributor onboarding |
-| [`SECURITY.md`](./SECURITY.md) | Vulnerability reporting |
 
 ---
 
