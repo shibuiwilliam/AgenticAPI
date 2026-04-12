@@ -6,7 +6,22 @@ AgenticAPI is a Python OSS framework that natively integrates coding agents into
 
 **In a nutshell**: FastAPI is for type-safe REST APIs. AgenticAPI is for harnessed agent APIs.
 
-**Current status**: Phase 1 v0.1.0. Core: 81 source files, 10,609 LOC, 713 tests, 87% coverage, 12 examples. Extensions: `agenticapi-claude-agent-sdk` v0.1.0 (1,610 src LOC, 38 tests).
+**Current status** (as of Increment 9, 2026-04-12). Core: **118 Python
+modules, ~21,944 LOC, 1,304 collected tests, 27 examples, 75 public
+exports**. Extensions: `agenticapi-claude-agent-sdk` v0.1.0 (~1,610 src
+LOC, 38 tests). **Phase A (control plane) is complete.** **Phase D
+(typed handlers + DI) core is complete** including schema-driven OpenAPI
+for typed `Intent[T]` request bodies (D7). Phases E / F have shipped
+their cores. Phase C (learning plane) has shipped foundations (C1 memory,
+C5 code cache, C6 eval harness). Phase B (safety) has shipped B5
+prompt-injection detection and B6 `PIIPolicy`. The `mesh/` package
+(AgentMesh, MeshContext) ships multi-agent orchestration with cycle
+detection and budget propagation.
+
+For the full plane-by-plane shipped / active / deferred matrix see
+[`ROADMAP.md`](ROADMAP.md). For speculative forward tracks see
+[`VISION.md`](VISION.md). For per-increment shipped-work log see
+[`IMPLEMENTATION_LOG.md`](IMPLEMENTATION_LOG.md).
 
 ---
 
@@ -23,13 +38,23 @@ pip install -e ".[mcp]"          # Optional: MCP support
 ### Testing
 
 ```bash
-uv run pytest                                    # All 713 tests (613 unit+integration + 100 e2e)
+uv run pytest                                    # All 1,206 tests (unit + integration + e2e)
 uv run pytest --ignore=tests/benchmarks -q       # Skip benchmarks (faster)
 uv run pytest tests/unit/harness/ -xvs           # Specific directory
-uv run pytest --cov=src/agenticapi               # With coverage (87%)
-uv run pytest tests/e2e/ -v                      # E2E tests for all 12 example apps
+uv run pytest --cov=src/agenticapi               # With coverage
+uv run pytest tests/e2e/ -v                      # E2E tests for all 23 example apps
 uv run pytest tests/benchmarks/                  # Benchmarks only
 uv run pytest -m "not requires_llm"              # Skip LLM-dependent tests
+```
+
+### CLI
+
+```bash
+uv run agenticapi version                        # Show version
+uv run agenticapi dev --app myapp:app            # Development server
+uv run agenticapi console --app myapp:app        # Interactive REPL
+uv run agenticapi replay <trace_id> --app myapp:app           # Re-run an audit trace (A6)
+uv run agenticapi eval --set evals/orders.yaml --app myapp:app   # Run an EvalSet (C6)
 ```
 
 ### Code Quality
@@ -94,20 +119,21 @@ uv run mypy extensions/agenticapi-claude-agent-sdk/src
 ```
 
 See:
-- [development/extensions.md](development/extensions.md) — Extensions architecture and contribution guide
-- [development/claude_agent_sdk_extension_plan.md](development/claude_agent_sdk_extension_plan.md) — Claude Agent SDK extension design rationale
+- [docs/internals/extensions.md](docs/internals/extensions.md) — Extensions architecture and contribution guide
+- [docs/internals/claude-agent-sdk-extension-plan.md](docs/internals/claude-agent-sdk-extension-plan.md) — Claude Agent SDK extension design rationale
 - [extensions/agenticapi-claude-agent-sdk/README.md](extensions/agenticapi-claude-agent-sdk/README.md) — User-facing docs
 
 ---
 
 ## Architecture
 
-See [development/architecture.md](development/architecture.md) for the full architecture document.
+See [docs/internals/current-state.md](docs/internals/current-state.md) first for implementation reality, then [docs/internals/architecture.md](docs/internals/architecture.md) for the full architecture document.
 
 ### Layer Structure
 
 ```
 Interface Layer -> Harness Engine -> Agent Runtime -> Sandbox -> Response
+                                              \-> Mesh Layer (AgentMesh, MeshContext)
 ```
 
 ### Request Flow
@@ -115,13 +141,36 @@ Interface Layer -> Harness Engine -> Agent Runtime -> Sandbox -> Response
 ```
 POST /agent/{name} {"intent": "..."}
   -> Authentication (if auth= configured)
-  -> IntentParser.parse() -> Intent
+  -> IntentParser.parse() -> Intent (or Intent[T] with structured output, D4)
   -> IntentScope check
-  -> [LLM path]: CodeGenerator -> PolicyEvaluator -> StaticAnalysis
-       -> ApprovalCheck -> ProcessSandbox -> Monitors -> Validators
-       -> AuditRecorder -> AgentResponse
-  -> [Handler path]: handler(intent, context) -> AgentResponse
+  -> Route-level dependencies (D6)
+  -> Dependency solver resolves handler params (D1)
+  -> [LLM path]:
+       -> BudgetPolicy.estimate_and_enforce (A4, pre-call)
+       -> CodeGenerator.generate
+          -> if approved-code cache hit: skip LLM (C5)
+          -> else: LLMBackend.generate
+       -> [Tool-first path (E4)]: if LLM picked a single tool,
+              HarnessEngine.call_tool -> Policy.evaluate_tool_call
+              -> Tool.invoke -> result (skips sandbox)
+       -> [Codegen path]: PolicyEvaluator (all policies)
+              -> StaticAnalysis -> ApprovalCheck -> ProcessSandbox
+              -> Monitors -> Validators
+       -> BudgetPolicy.record_actual (A4, post-call)
+       -> AuditRecorder (A3, SqliteAuditRecorder optional)
+       -> response_model validation (D5)
+       -> AgentResponse
+  -> [Streaming path (F1-F8)]:
+       handler takes AgentStream param -> events yielded lazily
+       -> SSE (F2) or NDJSON (F3) transport
+       -> AutonomyPolicy live escalation (F6)
+       -> stream.request_approval() in-request HITL (F5)
+       -> StreamStore for resumable streams (F7)
+  -> [Handler path]: handler(intent, context, ...) -> AgentResponse
   -> AgentTasks (background tasks run after response)
+
+OpenTelemetry spans + metrics wrap every stage (A1/A2).
+W3C traceparent propagated in and out (A5).
 ```
 
 ### Auto-Registered Routes
@@ -141,7 +190,7 @@ Every `AgenticApp` automatically provides:
 
 ## Module Reference
 
-See [development/modules.md](development/modules.md) for the complete module reference.
+See [docs/internals/modules.md](docs/internals/modules.md) for the complete module reference.
 
 ### Key Types
 
@@ -176,6 +225,25 @@ See [development/modules.md](development/modules.md) for the complete module ref
 | `RESTCompat` | `interface/compat/rest.py` | REST route generation |
 | `HtmxHeaders` | `interface/htmx.py` | HTMX request header detection (injected into handlers) |
 | `htmx_response_headers()` | `interface/htmx.py` | Build HTMX response headers (HX-Trigger, etc.) |
+| `Depends` / `Dependency` | `dependencies/depends.py` | FastAPI-style dependency injection for handler params |
+| `@tool` | `runtime/tools/decorator.py` | Declare tools from plain async functions with type hints |
+| `BudgetPolicy` | `harness/policy/budget_policy.py` | Per-request/session/user cost ceilings |
+| `PricingRegistry` | `harness/policy/pricing.py` | LLM token-cost pricing table for budget enforcement |
+| `BudgetExceeded` | `exceptions.py` | Raised when a request exceeds its cost budget (HTTP 402) |
+| `PromptInjectionPolicy` | `harness/policy/prompt_injection_policy.py` | 10 built-in detection rules; `disabled_categories=` + `extra_patterns=`; shadow mode |
+| `PIIPolicy` / `PIIHit` / `redact_pii` | `harness/policy/pii_policy.py` | Detect / redact / block email, phone, SSN, credit card (Luhn), IBAN, IPv4; `evaluate_tool_call` hook; standalone `redact_pii()` utility (B6) |
+| `AutonomyPolicy` / `EscalateWhen` / `AutonomySignal` | `harness/policy/autonomy_policy.py` | Declarative escalation rules evaluated mid-stream (F6) |
+| `AgentStream` / `AgentEvent` | `interface/stream.py` | Streaming handler param + 8 typed event types (F1) |
+| `StreamStore` / `InMemoryStreamStore` | `interface/stream_store.py` | Persisted stream state for resume endpoint (F7) |
+| `ApprovalRegistry` | `interface/approval_registry.py` | In-request HITL approval ticket registry (F5) |
+| `MemoryStore` / `InMemoryMemoryStore` / `SqliteMemoryStore` | `runtime/memory/*` | Agent memory protocol + persistent backend; `MemoryKind` = episodic / semantic / procedural (C1) |
+| `CodeCache` / `InMemoryCodeCache` / `CachedCode` | `runtime/code_cache.py` | Deterministic approved-code cache with LRU + TTL (C5) |
+| `EvalSet` / judges | `evaluation/*` | YAML eval harness + 5 built-in judges (C6) |
+| `SqliteAuditRecorder` | `harness/audit/sqlite_store.py` | Persistent audit store with `iter_since()` replay support (A3) |
+| `AgentMesh` | `mesh/mesh.py` | Multi-agent orchestration container with `@role` + `@orchestrator` decorators |
+| `MeshContext` / `MeshCycleError` | `mesh/context.py` | Request-scoped inter-role call context with cycle detection + budget propagation |
+| `RetryConfig` / `with_retry` | `runtime/llm/retry.py` | Exponential-backoff retry wrapper for transient LLM provider errors |
+| Observability | `observability/tracing.py`, `metrics.py`, `propagation.py`, `semconv.py` | OpenTelemetry spans + metrics + traceparent (A1/A2/A5, no-op without OTel) |
 
 ### Custom Response Types
 
@@ -293,7 +361,7 @@ logger.error("execution_failed", error=str(e), trace_id=ctx.trace_id)
 
 ## Security
 
-See [development/security.md](development/security.md) for the full security model.
+See [docs/internals/security.md](docs/internals/security.md) for the full security model.
 
 ### Authentication
 
@@ -330,7 +398,7 @@ app = AgenticApp(auth=auth)
 
 ## Testing
 
-See [development/testing.md](development/testing.md) for the full testing guide.
+See [docs/internals/testing.md](docs/internals/testing.md) for the full testing guide.
 
 ### Test-First Development
 
@@ -371,6 +439,21 @@ See [examples/README.md](examples/README.md) for the full examples guide.
 | `10_file_handling` | None | File upload/download: `UploadedFiles`, `FileResult`, streaming |
 | `11_html_responses` | None | Custom responses: `HTMLResult`, `PlainTextResult`, `FileResult` |
 | `12_htmx` | None | HTMX integration: `HtmxHeaders`, partial page updates, `htmx_response_headers` |
+| `13_claude_agent_sdk` | Claude Agent SDK | Full agentic loop via `agenticapi-claude-agent-sdk` extension |
+| `14_dependency_injection` | None | `Depends()`, nested deps, `yield` teardown, `@tool` decorator |
+| `15_budget_policy` | None | `BudgetPolicy`, `PricingRegistry`, HTTP 402, spend tracking |
+| `16_observability` | None | OTEL tracing, Prometheus `/metrics`, `SqliteAuditRecorder` |
+| `17_typed_intents` | None | `Intent[T]`, Pydantic payload validation, structured output |
+| `18_rest_interop` | None | `response_model`, `RESTCompat`, schema enforcement |
+| `19_native_function_calling` | None | `ToolCall`, native function calling, multi-turn loop |
+| `20_streaming_release_control` | None | `AgentStream`, SSE/NDJSON, `request_approval()`, `AutonomyPolicy` |
+| `21_persistent_memory` | None | `MemoryStore`, `SqliteMemoryStore`, `MemoryKind`, GDPR forget |
+| `22_safety_policies` | None | `PromptInjectionPolicy`, `PIIPolicy`, shadow mode, `redact_pii()` |
+| `23_eval_harness` | None | `EvalSet`, `EvalRunner`, 5 built-in judges, YAML eval sets |
+| `24_code_cache` | None | Approved-code cache to skip LLM on repeat intents |
+| `24_multi_agent_pipeline` | None | `AgentMesh`, `@mesh.role`, `@mesh.orchestrator`, `MeshContext.call()` |
+| `25_harness_playground` | None | Full harness with autonomy, safety, streaming |
+| `26_dynamic_pipeline` | None | `DynamicPipeline`, per-request stage selection |
 
 ---
 
@@ -416,7 +499,7 @@ See [examples/README.md](examples/README.md) for the full examples guide.
 
 1. Install: `pip install agenticapi[mcp]`
 2. Mark endpoints: `@app.agent_endpoint(name="search", enable_mcp=True)`
-3. Mount: `app.add_routes(expose_as_mcp(app))`
+3. Mount: `expose_as_mcp(app)`
 4. Test: `npx @modelcontextprotocol/inspector http://localhost:8000/mcp`
 5. Reference: `examples/08_mcp_agent/app.py`
 
@@ -453,6 +536,81 @@ See [examples/README.md](examples/README.md) for the full examples guide.
 4. Use `htmx_response_headers(trigger="event")` for client-side event triggers
 5. Reference: `examples/12_htmx/app.py`
 
+### Using Dependency Injection
+
+FastAPI-style `Depends()` for handler parameters. Supports sync + async functions, `yield` cleanup, and nested dependencies:
+
+```python
+from agenticapi import Depends
+
+async def get_db():
+    async with engine.connect() as conn:
+        yield conn
+
+@app.agent_endpoint(name="orders")
+async def orders(intent, context, db=Depends(get_db)):
+    ...
+```
+
+1. Declare the dependency as a plain callable (sync or async, may `yield`)
+2. Annotate the handler param with `= Depends(provider)`
+3. The framework scans and solves the dependency graph at registration time
+4. Reference: `src/agenticapi/dependencies/`
+
+### Declaring Tools via `@tool`
+
+Avoid the verbose `Tool` protocol — write a typed async function:
+
+```python
+from agenticapi import tool
+
+@tool(description="Look up a user by ID")
+async def get_user(user_id: int) -> dict:
+    return {"id": user_id, "name": "Alice"}
+
+registry.register(get_user)
+```
+
+The decorator infers `parameters_schema` from type hints and the docstring.
+
+1. Use plain type hints (`int`, `str`, `list[int]`, etc.) — schema is generated
+2. Docstring first line becomes the tool description if not specified
+3. Async and sync functions both work
+4. Reference: `src/agenticapi/runtime/tools/decorator.py`
+
+### Adding Cost Budget Enforcement
+
+`BudgetPolicy` is a cost-governance primitive with request/session/user/endpoint scopes. In the current implementation, the real integration path is explicit around LLM calls via `estimate_and_enforce(...)` and `record_actual(...)`.
+
+```python
+from agenticapi import BudgetPolicy, PricingRegistry, HarnessEngine
+
+pricing = PricingRegistry.default()  # built-in pricing for Claude, GPT, Gemini
+budget = BudgetPolicy(
+    pricing=pricing,
+    max_per_request_usd=0.50,
+    max_per_session_usd=5.00,
+)
+harness = HarnessEngine(policies=[code_policy, budget])
+```
+
+Exceeded budgets raise `BudgetExceeded` -> HTTP **402 Payment Required**. See `docs/internals/budgets.md` for the current explicit integration pattern and caveats.
+
+### Adding Observability (OpenTelemetry)
+
+Tracing and metrics are opt-in and degrade to no-op when `opentelemetry-api` is not installed:
+
+```python
+from agenticapi.observability import configure_tracing, configure_metrics
+
+configure_tracing(service_name="my-agent")
+configure_metrics(service_name="my-agent")
+```
+
+Core request metrics and tracing are wired in, and the helper APIs cover policy denials, budget blocks, tool calls, and LLM usage. Automatic coverage is still partial for some newer execution paths, so use the `record_*` helpers explicitly when extending the framework.
+
+See [docs/internals/observability.md](docs/internals/observability.md) for the full semconv and metric catalogue.
+
 ### Creating a New Extension Package
 
 Extensions live under `extensions/<package-name>/` with their own `pyproject.toml` and are published separately from core.
@@ -474,7 +632,77 @@ Extensions live under `extensions/<package-name>/` with their own `pyproject.tom
 3. Use **lazy imports** for the wrapped library so `import my_extension` never fails even when the optional dep is absent. Raise a friendly `*NotInstalledError` on first use.
 4. Tests must run **offline**: install a stub module in `conftest.py` that mimics the wrapped library's public surface.
 5. Errors should inherit from `agenticapi.AgenticAPIError` so callers can catch both core and extension errors uniformly.
-6. Reference: `extensions/agenticapi-claude-agent-sdk/` and `development/extensions.md`.
+6. Reference: `extensions/agenticapi-claude-agent-sdk/` and `docs/internals/extensions.md`.
+
+## Forward Tracks — Implementation Guide
+
+Three forward tracks are defined in [`VISION.md`](VISION.md). This
+section provides the implementation-level guidance a Claude Code session
+needs to execute them. For the strategic rationale see
+[`PROJECT.md`](PROJECT.md) > Strategic Forward Tracks. For the full
+task-level specs (file manifests, protocols, test checklists) see the
+archived originals in `development/archive/`.
+
+### Track summaries
+
+| Track | One-line summary | VISION.md section |
+|---|---|---|
+| **1 — Agent Mesh** | Governed multi-agent orchestration with budget propagation, approval bubbling, and audit linkage | Track 1 (Phases G + M) |
+| **2 — Hardened Trust** | Declarative capability grants, kernel-isolated sandbox, secret substitution, code attestation, `production=True` mode | Track 2 (Phases I + T) |
+| **3 — Self-Improving Flywheel** | Outcome feedback, skill mining from audit traces, adaptive routing, prompt auto-tuning | Track 3 (Phases H + L) |
+
+### Substrate already shipped (per track)
+
+**Track 1 (Mesh):** D1 (DI scanner for `MeshContext` injection), D4
+(`Intent[T]` for typed role payloads), A3 (SqliteAuditRecorder for
+linked audit rows), A4 (BudgetPolicy for scope propagation), A5
+(traceparent for distributed mesh traces), F1 (AgentStream for nested
+events), F5 (ApprovalRegistry for bubbling).
+
+**Track 2 (Trust):** B5 (PromptInjectionPolicy), B6 (PIIPolicy), E4
+(`evaluate_tool_call` hook for per-tool capability enforcement), A1
+(OTEL for sandbox span events), A3 (SqliteAuditRecorder for attestation
+persistence), `SandboxRuntime` ABC in `harness/sandbox/base.py`.
+
+**Track 3 (Flywheel):** A3 (SqliteAuditRecorder — the feedstock), A6
+(replay primitive for evaluating prompt variants), C1 (MemoryStore for
+long-lived experience records), C5 (approved-code cache, subsumed by
+SkillMiner promotions), C6 (EvalSet for PromptCompiler objective
+scoring), E4 (tool-first execution path — promoted skills become tools),
+D5 (response_model for outcome classification).
+
+### Execution ordering
+
+```
+MeshEnvelope zero increment (shared propagation type)
+    -> Track 1 (Agent Mesh, ~4-6 days)
+    -> Track 2 (Hardened Trust, ~5-7 days)
+    -> Track 3 (Flywheel, ~6-8 days)
+```
+
+The `MeshEnvelope` type ships first so all three tracks consume the same
+propagation envelope and cannot diverge.
+
+### Per-task prompt template
+
+When starting any task from `VISION.md` or the Implementation Blueprints
+above, use this structure:
+
+```
+1. Read the task spec (VISION.md > Track N, or the Blueprint above).
+2. Read development/ docs for the relevant subsystem architecture.
+3. Implement the minimum to pass the "Done when" checklist.
+4. Run the quality gate:
+   uv run ruff format --check src/ tests/ examples/ && \
+   uv run ruff check src/ tests/ examples/ && \
+   uv run mypy src/agenticapi/ && \
+   uv run pytest --ignore=tests/benchmarks
+5. Update ROADMAP.md + IMPLEMENTATION_LOG.md in the same commit.
+6. If the task ships new public API names, update the Key Types table
+   in this file.
+```
+
+---
 
 ## CI/CD
 
@@ -513,18 +741,153 @@ Scopes: `interface`, `harness`, `runtime`, `application`, `ops`, `cli`, `testing
 
 ---
 
-## Phase 2 Roadmap (Not Yet Implemented)
+## Implementation Blueprints
 
-| Feature | Location | Description |
-|---|---|---|
-| A2A Server/Client | `interface/a2a/server.py`, `client.py` | Inter-agent HTTP communication |
-| Service Discovery | `interface/a2a/discovery.py` | Agent registry and lookup |
-| AdaptiveDataAccess | `application/data_access.py` | Multi-source data routing |
-| BusinessRuleEngine | `application/business_rules.py` | NL-defined business rules |
-| CrossDomainOptimizer | `application/cross_domain.py` | Cross-domain optimization |
-| LogAnalyst | `ops/log_analyst.py` | Semantic log analysis |
-| AutoHealer | `ops/auto_healer.py` | Automated incident recovery |
-| PerformanceTuner | `ops/perf_tuner.py` | Runtime optimization |
-| IncidentResponder | `ops/incident.py` | Incident management |
-| ContainerSandbox | `harness/sandbox/container.py` | Kernel-level isolation |
-| GraphQL compat | `interface/compat/graphql.py` | GraphQL schema exposure |
+File-level task specs for the three immediate strategic priorities
+identified in [`PROJECT.md`](PROJECT.md) > Immediate Strategic Priorities.
+Each task is designed to be picked up by a single Claude Code session
+using the per-task prompt template below.
+
+### Element 1: Native Function Calling (E8)
+
+**Task E8-A: Anthropic `tool_use` round-trip.**
+File: `src/agenticapi/runtime/llm/anthropic.py`. Parse `ToolUseBlock`
+from `message.content` into `ToolCall` objects on `LLMResponse`. Set
+`finish_reason = "tool_calls"` when `stop_reason == "tool_use"`.
+Add retry (3x with jitter) for `RateLimitError`, `APITimeoutError`.
+Tests: `tests/unit/runtime/llm/test_anthropic_tool_calls.py`.
+
+**Task E8-B: OpenAI `tool_calls` round-trip.**
+File: `src/agenticapi/runtime/llm/openai.py`. Parse
+`response.choices[0].message.tool_calls` into `ToolCall` objects.
+Pass `finish_reason` from `choices[0].finish_reason`.
+Add retry for `RateLimitError`, `APITimeoutError`.
+Tests: `tests/unit/runtime/llm/test_openai_tool_calls.py`.
+
+**Task E8-C: Gemini `function_calling` round-trip.**
+File: `src/agenticapi/runtime/llm/gemini.py`. Build
+`function_declarations` from `prompt.tools`. Parse
+`part.function_call` from `response.candidates[0].content.parts`.
+Add retry for `ResourceExhausted`, `ServiceUnavailable`.
+Tests: `tests/unit/runtime/llm/test_gemini_tool_calls.py`.
+
+**Task E8-D: `tool_choice` on `LLMPrompt`.**
+File: `src/agenticapi/runtime/llm/base.py`. Add `tool_choice: str |
+dict[str, str] | None = None` to `LLMPrompt`. Update `MockBackend`
+to honour `tool_choice="required"`.
+
+**Task E8-E: Integration tests (gated on env vars).**
+Files: `tests/integration/llm/test_real_{anthropic,openai,gemini}.py`.
+Each sends a prompt with one tool, asserts `tool_calls` is non-empty.
+Gated with `@pytest.mark.skipif(not os.environ.get("..._API_KEY"))`.
+
+**Task E8-F: Update examples 03/04/05.**
+Add a handler in each LLM example that exercises tool-first dispatch
+with a real provider. Falls back to direct-handler mode without a key.
+
+**Task RETRY-1: Retry wrapper.**
+File: `src/agenticapi/runtime/llm/retry.py`. `RetryConfig` dataclass
++ `with_retry(fn, config)` async wrapper. Each backend's constructor
+accepts `retry: RetryConfig`. Tests: `tests/unit/runtime/llm/test_retry.py`.
+
+### Element 2: Multi-Agent Mesh (remote transport)
+
+**Task MESH-HTTP: `HttpTransport` for remote mesh peers.**
+File: `src/agenticapi/mesh/transport.py`. `HttpTransport(peers={...})`
+that calls another AgenticAPI instance with `traceparent` + delegation
+headers. Falls back to `LocalTransport` (already shipped).
+
+**Task MESH-BUDGET: Cross-agent `BudgetScope` propagation.**
+File: `src/agenticapi/harness/policy/budget_policy.py`. Add
+`BudgetScope(parent, key, limit_usd)` so sub-agent costs debit the
+parent's shared wallet. Tests: budget exhaustion across 2 hops.
+
+**Task MESH-APPROVAL: Approval bubbling.**
+File: `src/agenticapi/interface/approval_registry.py`. Sub-agent
+`request_approval()` resolves against the parent's ticket so the
+operator sees one item, not N.
+
+### Element 3: Init Templates
+
+**Task INIT-CHAT: `--template chat` variant.**
+Generates an app with `AgentStream` + `streaming="sse"` +
+`AutonomyPolicy` with one `EscalateWhen` rule. Handler emits
+`thought`, `partial`, `final` events.
+
+**Task INIT-TOOLS: `--template tool-calling` variant.**
+Generates an app with 3 `@tool` functions, uses the tool-first
+path, falls back to `MockBackend` with pre-queued responses.
+
+### Per-task prompt template for Claude Code
+
+```
+You are implementing AgenticAPI task {TASK_ID}.
+Read CLAUDE.md (this file) before doing anything else.
+
+Your job:
+1. Follow the task's file list and API sketch exactly.
+2. Implement with `mypy --strict` compliance.
+3. Add the tests listed.
+4. Run quality gates:
+   uv run ruff format --check src/ tests/ examples/ \
+     && uv run ruff check src/ tests/ examples/ \
+     && uv run mypy src/agenticapi/ \
+     && uv run pytest --ignore=tests/benchmarks -q
+5. Fix any failures before reporting done.
+6. Update ROADMAP.md + IMPLEMENTATION_LOG.md (durability rule).
+
+Do not invent features beyond the task description.
+```
+
+---
+
+## Roadmap
+
+The **single source of execution truth** is [`ROADMAP.md`](ROADMAP.md).
+
+- What's shipped: `ROADMAP.md` > Shipped (Phase D / E / F / A / B / C
+  tables with per-task increment numbers and links to
+  `IMPLEMENTATION_LOG.md`).
+- What's next: `ROADMAP.md` > Active.
+- What's parked and why: `ROADMAP.md` > Deferred.
+- Original Phase 2 items and their current mapping:
+  [`VISION.md`](VISION.md) > Historical Appendix.
+- Speculative future tracks (Agent Mesh, Hardened Trust, Self-Improving
+  Flywheel): [`VISION.md`](VISION.md).
+
+---
+
+## Documentation Map
+
+The project has four root planning docs, an append-only log, one
+mkdocs site, and one archive:
+
+| File | Job |
+|---|---|
+| [`README.md`](README.md) | User landing page: positioning, 5-minute tour, install |
+| [`PROJECT.md`](PROJECT.md) | Stable product vision + design principles + architecture overview + harness concept |
+| [`ROADMAP.md`](ROADMAP.md) | **Living status doc.** Shipped / Active / Deferred / Superseded tables for every plane |
+| [`VISION.md`](VISION.md) | Speculative forward tracks (Mesh, Trust, Flywheel) + historical appendix |
+| [`CLAUDE.md`](CLAUDE.md) | **This file.** Developer guide: commands, conventions, module map, extending |
+| [`IMPLEMENTATION_LOG.md`](IMPLEMENTATION_LOG.md) | Append-only log of shipped increments |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor onboarding (setup, tests, commit conventions) |
+| [`SECURITY.md`](SECURITY.md) | Vulnerability reporting + security model summary |
+| [`docs/`](docs/) | mkdocs site: Getting Started, Guides, API Reference, Internals |
+| [`development/`](development/) | Internal engineering docs for contributors + Claude Code (architecture, modules, testing, extending, security) |
+
+### The durability rule
+
+**Every `IMPLEMENTATION_LOG.md` entry must update `ROADMAP.md` in the
+same commit.** This is the one rule that keeps the shipped / active /
+deferred tables from going stale. When you finish an increment:
+
+1. Append a new `# Increment N — ...` section to `IMPLEMENTATION_LOG.md`.
+2. Move the relevant tasks from `ROADMAP.md` > Active (or Deferred or
+   Superseded) into the correct **Shipped** table with the increment
+   number and a link to the log anchor.
+3. Refresh the "At a glance" status column and the metrics footer in
+   `ROADMAP.md`.
+4. If the increment shipped new public API names, also update the "Key
+   Types" table in this file.
+5. If the increment shipped new guides or internals docs, update
+   [`mkdocs.yml`](mkdocs.yml) > `nav`.

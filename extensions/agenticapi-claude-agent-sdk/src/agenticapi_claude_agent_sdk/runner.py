@@ -137,7 +137,7 @@ class ClaudeAgentRunner:
     async def run(
         self,
         *,
-        intent: Intent,
+        intent: Intent[Any],
         context: AgentContext,
     ) -> AgentResponse:
         """Run a single agentic session for the given intent.
@@ -211,7 +211,7 @@ class ClaudeAgentRunner:
     async def stream(
         self,
         *,
-        intent: Intent,
+        intent: Intent[Any],
         context: AgentContext,
     ) -> AsyncIterator[AgentSessionEvent]:
         """Stream events from the SDK session as they happen.
@@ -266,7 +266,7 @@ class ClaudeAgentRunner:
         )
         return adapter, options
 
-    def _build_prompt(self, intent: Intent, context: AgentContext) -> str:
+    def _build_prompt(self, intent: Intent[Any], context: AgentContext) -> str:
         """Build the prompt string sent to ``query()``.
 
         We start from the raw intent and append a small context block
@@ -283,7 +283,7 @@ class ClaudeAgentRunner:
         *,
         trace_id: str,
         session: AgentSessionResult,
-        intent: Intent,
+        intent: Intent[Any],
         context: AgentContext,
         duration_ms: float,
         permission_decisions: list[Any],

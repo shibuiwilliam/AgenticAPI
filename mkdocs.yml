@@ -74,24 +74,35 @@ nav:
   - Guides:
     - Architecture: guides/architecture.md
     - Intent System: guides/intents.md
+    - Typed Intents: guides/typed-intents.md
+    - Dependency Injection: guides/dependency-injection.md
     - Harness & Safety: guides/harness.md
+    - Cost Budgeting: guides/cost-budgeting.md
+    - Observability: guides/observability.md
     - Authentication: guides/authentication.md
     - File Handling: guides/file-handling.md
     - HTMX Support: guides/htmx.md
     - LLM Backends: guides/llm-backends.md
     - Tools: guides/tools.md
+    - Tool Decorator: guides/tool-decorator.md
     - Dynamic Pipelines: guides/pipelines.md
+    - Agent Memory: guides/memory.md
     - Approval Workflows: guides/approval.md
+    - Eval Harness: guides/eval-harness.md
+    - Safety Policies: guides/safety-policies.md
     - Sessions: guides/sessions.md
+    - Streaming: guides/streaming.md
     - OpenAPI & Swagger: guides/openapi.md
     - Agent-to-Agent: guides/a2a.md
     - Ops Agents: guides/ops-agents.md
+    - Agent Mesh: guides/mesh.md
     - REST Compatibility: guides/rest-compat.md
     - Testing: guides/testing.md
     - Security Model: guides/security.md
   - API Reference:
     - AgenticApp: api/app.md
     - Intent, Response & Tasks: api/interface.md
+    - Dependency Injection: api/dependencies.md
     - Security: api/security.md
     - File Upload & Responses: api/upload.md
     - HTMX: api/htmx.md
@@ -100,15 +111,27 @@ nav:
     - Sandbox & Analysis: api/sandbox.md
     - Approval: api/approval.md
     - Audit: api/audit.md
+    - Observability: api/observability.md
     - LLM Backends: api/llm.md
     - Tools: api/tools.md
     - Pipeline: api/pipeline.md
     - Ops Agents: api/ops.md
+    - Agent Mesh: api/mesh.md
     - Agent-to-Agent: api/a2a.md
     - Context: api/context.md
     - Types & Exceptions: api/types.md
     - Testing Utilities: api/testing.md
-  - Development:
-    - Contributing: development/contributing.md
-    - Module Reference: development/modules.md
-    - Extensions: development/extensions.md
+  - Internals:
+    - Current State: internals/current-state.md
+    - Architecture (implementation): internals/architecture.md
+    - Module Reference: internals/modules.md
+    - Dependency Injection Internals: internals/dependencies.md
+    - Observability Internals: internals/observability.md
+    - Security Model Internals: internals/security.md
+    - Testing Internals: internals/testing.md
+    - Cost Budgeting Internals: internals/budgets.md
+    - Extending the Framework: internals/extending.md
+    - Extensions Architecture: internals/extensions.md
+    - Claude Agent SDK Extension: internals/claude-agent-sdk-extension-plan.md
+    - CI/CD: internals/ci.md
+    - Contributing: internals/contributing.md

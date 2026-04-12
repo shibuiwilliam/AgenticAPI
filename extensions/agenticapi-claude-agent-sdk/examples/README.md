@@ -15,4 +15,4 @@ uvicorn examples.01_simple_query:app --reload
 Set `ANTHROPIC_API_KEY` first.
 
 For full background see the
-[Claude Agent SDK extension plan](../../../development/claude_agent_sdk_extension_plan.md).
+[Claude Agent SDK extension plan](../../../docs/internals/claude-agent-sdk-extension-plan.md).
