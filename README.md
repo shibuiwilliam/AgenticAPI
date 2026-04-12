@@ -34,29 +34,48 @@ You instantly get Swagger UI at `/docs`, ReDoc at `/redoc`, an OpenAPI 3.1 spec 
 
 ## Table of Contents
 
-- [Why AgenticAPI?](#why-agenticapi)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Quick Tour](#quick-tour)
-- [How It Maps to FastAPI](#how-it-maps-to-fastapi)
-- [Features at a Glance](#features-at-a-glance)
-- [Safety: The Harness System](#safety-the-harness-system)
-- [Native Function Calling](#native-function-calling)
-- [Multi-Agent Orchestration](#multi-agent-orchestration)
-- [Authentication](#authentication)
-- [LLM Backends](#llm-backends)
-- [Tools](#tools)
-- [Custom Responses, HTMX & File Handling](#custom-responses-htmx--file-handling)
-- [MCP, REST Compatibility & Middleware](#mcp-rest-compatibility--middleware)
-- [Observability](#observability)
-- [Extensions](#extensions)
-- [Examples](#examples)
-- [CLI Reference](#cli-reference)
-- [Development](#development)
-- [Project Structure](#project-structure)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [License](#license)
+- [AgenticAPI](#agenticapi)
+  - [Table of Contents](#table-of-contents)
+  - [Why AgenticAPI?](#why-agenticapi)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Quick Tour](#quick-tour)
+    - [1. Minimal endpoint (no LLM needed)](#1-minimal-endpoint-no-llm-needed)
+    - [2. With an LLM and the safety harness](#2-with-an-llm-and-the-safety-harness)
+    - [3. Typed intents](#3-typed-intents)
+    - [4. Dependency injection](#4-dependency-injection)
+    - [5. Programmatic usage (no HTTP)](#5-programmatic-usage-no-http)
+  - [How It Maps to FastAPI](#how-it-maps-to-fastapi)
+  - [Features at a Glance](#features-at-a-glance)
+  - [Safety: The Harness System](#safety-the-harness-system)
+    - [Policies](#policies)
+    - [Agent Memory](#agent-memory)
+    - [Code Cache](#code-cache)
+    - [Streaming](#streaming)
+    - [Cost Budgeting](#cost-budgeting)
+    - [Sandbox \& Audit](#sandbox--audit)
+  - [Native Function Calling](#native-function-calling)
+  - [Multi-Agent Orchestration](#multi-agent-orchestration)
+  - [Authentication](#authentication)
+  - [LLM Backends](#llm-backends)
+  - [Tools](#tools)
+  - [Custom Responses, HTMX \& File Handling](#custom-responses-htmx--file-handling)
+  - [MCP, REST Compatibility \& Middleware](#mcp-rest-compatibility--middleware)
+  - [Observability](#observability)
+  - [Extensions](#extensions)
+  - [Examples](#examples)
+  - [CLI Reference](#cli-reference)
+  - [Development](#development)
+    - [Common Commands](#common-commands)
+    - [Running Tests](#running-tests)
+    - [Code Quality](#code-quality)
+    - [Pre-commit Hooks](#pre-commit-hooks)
+  - [Project Structure](#project-structure)
+  - [Requirements](#requirements)
+  - [Documentation](#documentation)
+    - [Where everything lives](#where-everything-lives)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ---
 
@@ -78,10 +97,6 @@ Either way you get **27 runnable examples** to copy from, **1,310 passing tests*
 ## Installation
 
 **Python 3.13+** is required. The framework uses `match`, `type` aliases, `StrEnum`, and other modern features.
-
-```bash
-pip install agenticapi
-```
 
 For development:
 
