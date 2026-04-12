@@ -19,7 +19,7 @@ What this example shows:
   error response explaining how to install it.
 
 Prerequisites:
-    pip install agenticapi-claude-agent-sdk
+    pip install agentharnessapi[claude-agent-sdk]
     export ANTHROPIC_API_KEY=sk-ant-...
 
 Run with:
@@ -126,7 +126,7 @@ def _build_runner() -> tuple[Any, AuditRecorder] | None:
     call.
     """
     try:
-        from agenticapi_claude_agent_sdk import ClaudeAgentRunner
+        from agenticapi.ext.claude_agent_sdk import ClaudeAgentRunner
     except ImportError:
         return None
 
@@ -195,7 +195,8 @@ async def ask(intent: Intent, context: AgentContext) -> dict[str, Any]:
             "ok": False,
             "error": "extension_not_installed",
             "message": (
-                "agenticapi-claude-agent-sdk is not installed. Install it with: pip install agenticapi-claude-agent-sdk"
+                "agenticapi.ext.claude_agent_sdk is not available. "
+                "Install it with: pip install agentharnessapi[claude-agent-sdk]"
             ),
             "intent": intent.raw,
         }

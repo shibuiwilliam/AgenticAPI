@@ -20,7 +20,7 @@ Every example automatically serves interactive API docs at `http://127.0.0.1:800
 | [10_file_handling](#10-file-handling) | Files | No | Upload: `UploadedFiles`, download: `FileResult`, streaming |
 | [11_html_responses](#11-html-responses) | Pages | No | `HTMLResult`, `PlainTextResult`, `FileResult`, mixed endpoints |
 | [12_htmx](#12-htmx) | Todo app | No | `HtmxHeaders`, `htmx_response_headers`, partial updates |
-| [13_claude_agent_sdk](#13-claude-agent-sdk) | Assistant + audit | `ANTHROPIC_API_KEY` (optional) | Full Claude Agent SDK loop via `agenticapi-claude-agent-sdk` extension |
+| [13_claude_agent_sdk](#13-claude-agent-sdk) | Assistant + audit | `ANTHROPIC_API_KEY` (optional) | Full Claude Agent SDK loop via `agentharnessapi[claude-agent-sdk]` |
 | [14_dependency_injection](#14-dependency-injection) | Bookstore | No | `Depends()`, nested dependencies, `yield` teardown, `@tool` decorator |
 | [15_budget_policy](#15-budget-policy) | Chat with cost caps | No | `BudgetPolicy`, `PricingRegistry`, HTTP 402 on budget breach, spend inspection |
 | [16_observability](#16-observability) | Production ops | No | `configure_tracing` / `configure_metrics`, `SqliteAuditRecorder`, Prometheus `/metrics` |
@@ -48,7 +48,7 @@ agenticapi dev --app examples.01_hello_agent.app:app
 uvicorn examples.01_hello_agent.app:app --reload
 ```
 
-Examples 01, 02, 08-12, and 14-24 require no API keys. Examples 03, 04, and 05 are designed for a specific LLM provider — they *import* cleanly without credentials and continue to serve `/health`, `/docs`, and their deterministic search / inventory / metrics endpoints, but the LLM-powered endpoints (LLM-driven code generation in 03, `products.describe` / `products.recommend` in 04, `tickets.analyze` / `tickets.draft_response` in 05) return a typed friendly error until the matching `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` is set. Examples 06 and 07 let you choose a provider via `AGENTICAPI_LLM_PROVIDER` and fall back to direct-handler mode when no key is set. Example 08 requires `pip install agenticapi[mcp]`. Example 13 requires `pip install agenticapi-claude-agent-sdk` and (for live calls) `ANTHROPIC_API_KEY` — without them it imports cleanly and the `assistant.audit` endpoint still works. Example 16 runs without OpenTelemetry installed (all tracing/metrics calls become no-ops) and upgrades itself when `opentelemetry-api` + `opentelemetry-sdk` are present. Examples 17 and 19 use `MockBackend` so the demo curl walkthroughs run without any LLM keys; swap in a real backend with a two-line change when you're ready to exercise the same code path against Anthropic, OpenAI, or Gemini.
+Examples 01, 02, 08-12, and 14-24 require no API keys. Examples 03, 04, and 05 are designed for a specific LLM provider — they *import* cleanly without credentials and continue to serve `/health`, `/docs`, and their deterministic search / inventory / metrics endpoints, but the LLM-powered endpoints (LLM-driven code generation in 03, `products.describe` / `products.recommend` in 04, `tickets.analyze` / `tickets.draft_response` in 05) return a typed friendly error until the matching `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` is set. Examples 06 and 07 let you choose a provider via `AGENTICAPI_LLM_PROVIDER` and fall back to direct-handler mode when no key is set. Example 08 requires `pip install agentharnessapi[mcp]`. Example 13 requires `pip install agentharnessapi[claude-agent-sdk]` and (for live calls) `ANTHROPIC_API_KEY` — without them it imports cleanly and the `assistant.audit` endpoint still works. Example 16 runs without OpenTelemetry installed (all tracing/metrics calls become no-ops) and upgrades itself when `opentelemetry-api` + `opentelemetry-sdk` are present. Examples 17 and 19 use `MockBackend` so the demo curl walkthroughs run without any LLM keys; swap in a real backend with a two-line change when you're ready to exercise the same code path against Anthropic, OpenAI, or Gemini.
 
 ---
 
@@ -410,7 +410,7 @@ A task tracker that exposes select endpoints as [MCP](https://modelcontextprotoc
 **Prerequisites:**
 
 ```bash
-pip install agenticapi[mcp]
+pip install agentharnessapi[mcp]
 ```
 
 ```bash
@@ -670,7 +670,7 @@ curl -X POST http://127.0.0.1:8000/agent/todo.toggle \
 
 ## 13 Claude Agent SDK
 
-A demo of the **`agenticapi-claude-agent-sdk`** extension, which runs the full Claude Agent SDK loop (planning + tool use + reflection) inside an AgenticAPI endpoint while preserving AgenticAPI's harness guarantees: declarative policies, an audit trail, and a tool registry exposed to the model as MCP tools.
+A demo of the **`agentharnessapi[claude-agent-sdk]`** extra, which runs the full Claude Agent SDK loop (planning + tool use + reflection) inside an AgenticAPI endpoint while preserving AgenticAPI's harness guarantees: declarative policies, an audit trail, and a tool registry exposed to the model as MCP tools.
 
 The example wires up a `ClaudeAgentRunner` with a `CodePolicy`, an in-process AgenticAPI tool (`FaqTool`), and an `AuditRecorder`. It also degrades gracefully when the extension or `ANTHROPIC_API_KEY` is missing — the app still imports, the `assistant.audit` endpoint still works, and `assistant.ask` returns a structured error explaining how to install the extension.
 
@@ -679,7 +679,7 @@ The example wires up a `ClaudeAgentRunner` with a `CodePolicy`, an in-process Ag
 **Prerequisites (optional but recommended):**
 
 ```bash
-pip install agenticapi-claude-agent-sdk
+pip install agentharnessapi[claude-agent-sdk]
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 

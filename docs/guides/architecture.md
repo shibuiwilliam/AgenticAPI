@@ -206,7 +206,7 @@ Disable with `AgenticApp(docs_url=None, redoc_url=None, openapi_url=None)`.
 
 ## MCP (Model Context Protocol) Support
 
-Agent endpoints can be exposed as MCP tools for use by Claude Desktop, Cursor, and other MCP clients. Requires `pip install agenticapi[mcp]`.
+Agent endpoints can be exposed as MCP tools for use by Claude Desktop, Cursor, and other MCP clients. Requires `pip install agentharnessapi[mcp]`.
 
 ```python
 @app.agent_endpoint(name="search", enable_mcp=True)

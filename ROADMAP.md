@@ -25,7 +25,7 @@
 - 1,304 main tests + 38 extension tests · mypy `--strict` clean · ruff format + lint clean · mkdocs `--strict` clean
 - 27 example apps (`examples/01_hello_agent` through `26_dynamic_pipeline`)
 - 75 symbols in `agenticapi.__all__`
-- 1 extension (`agenticapi-claude-agent-sdk` v0.1.0)
+- 1 optional extra (`agentharnessapi[claude-agent-sdk]`)
 
 ---
 

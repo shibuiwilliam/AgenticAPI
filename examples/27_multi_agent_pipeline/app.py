@@ -4,7 +4,7 @@ Demonstrates a 3-role research pipeline: researcher → summariser → reviewer.
 All roles run in-process with budget propagation and trace linkage.
 
 Prerequisites:
-    pip install agenticapi
+    pip install agentharnessapi
 
 Run:
     agenticapi dev --app examples.27_multi_agent_pipeline.app:app

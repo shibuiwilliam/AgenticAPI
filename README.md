@@ -98,6 +98,10 @@ Either way you get **27 runnable examples** to copy from, **1,310 passing tests*
 
 **Python 3.13+** is required. The framework uses `match`, `type` aliases, `StrEnum`, and other modern features.
 
+```bash
+pip install agentharnessapi
+```
+
 For development:
 
 ```bash
@@ -109,8 +113,8 @@ uv sync --group dev    # or: pip install -e ".[dev]"
 Optional extras:
 
 ```bash
-pip install agenticapi[mcp]                  # MCP server support
-pip install agenticapi-claude-agent-sdk      # Full Claude Agent SDK loop (separate package)
+pip install agentharnessapi[mcp]                  # MCP server support
+pip install agentharnessapi[claude-agent-sdk]      # Full Claude Agent SDK loop
 
 # Observability -- all optional, all graceful no-ops when missing
 pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp
@@ -316,7 +320,7 @@ If you know FastAPI, you already know the patterns:
 | **Agent-to-Agent** | Capability discovery, trust scoring, inter-agent communication |
 | **Sessions** | Multi-turn conversations with context accumulation and TTL expiration |
 | **REST compatibility** | Mount FastAPI inside AgenticAPI, or expose agent endpoints as REST routes |
-| **Extensions** | Independent packages like `agenticapi-claude-agent-sdk` for heavyweight integrations |
+| **Extensions** | Optional extras like `agentharnessapi[claude-agent-sdk]` for heavyweight integrations |
 | **Observability** | OpenTelemetry spans + Prometheus metrics + W3C trace propagation, graceful no-op when absent |
 | **Eval harness** | Regression-test agent endpoints with deterministic assertion suites |
 | **OpenAPI docs** | Auto-generated Swagger UI, ReDoc, and OpenAPI 3.1.0 schema |
@@ -563,7 +567,7 @@ File upload via multipart, download via `FileResult`, streaming via Starlette. S
 ## MCP, REST Compatibility & Middleware
 
 ```python
-# Expose endpoints as MCP tools (pip install agenticapi[mcp])
+# Expose endpoints as MCP tools (pip install agentharnessapi[mcp])
 from agenticapi.interface.compat.mcp import expose_as_mcp
 expose_as_mcp(app, path="/mcp")
 
@@ -598,11 +602,11 @@ W3C trace propagation, request/latency/cost/denial metrics, graceful no-ops when
 Heavyweight integrations are released as separate packages under `extensions/`:
 
 ```bash
-pip install agenticapi-claude-agent-sdk
+pip install agentharnessapi[claude-agent-sdk]
 ```
 
 ```python
-from agenticapi_claude_agent_sdk import ClaudeAgentRunner
+from agenticapi.ext.claude_agent_sdk import ClaudeAgentRunner
 
 runner = ClaudeAgentRunner(
     system_prompt="You are a coding assistant.",
@@ -764,7 +768,7 @@ src/agenticapi/
     cli/                    # dev, console, replay, eval, init, version
 
 extensions/
-    agenticapi-claude-agent-sdk/   # Independent package -- full Claude Agent SDK loop
+    agenticapi-claude-agent-sdk/   # Historical — now merged into agentharnessapi[claude-agent-sdk]
 
 examples/
     01_hello_agent/ .. 27_multi_agent_pipeline/   # 27 runnable example apps

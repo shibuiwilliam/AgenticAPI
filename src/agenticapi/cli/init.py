@@ -169,7 +169,7 @@ An [AgenticAPI](https://github.com/anthropics/agenticapi) project.
 
 ```bash
 # 1. Install dependencies
-pip install agenticapi
+pip install agentharnessapi
 
 # 2. Run the development server
 agenticapi dev --app app:app

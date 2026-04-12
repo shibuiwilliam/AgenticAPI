@@ -1,6 +1,14 @@
 # Extensions Architecture
 
-AgenticAPI supports independently-installable **extension packages** that wrap third-party libraries (LLM SDKs, framework adapters, domain-specific runtimes) without bloating the core package.
+> **Note (post-migration).** The Claude Agent SDK extension has been merged
+> into the main package as an optional extra. Install with
+> `pip install agentharnessapi[claude-agent-sdk]` and import from
+> `agenticapi.ext.claude_agent_sdk`. The `extensions/` directory is
+> preserved for historical reference. New extensions follow the same
+> extras pattern: add the dependency to `[project.optional-dependencies]`
+> in `pyproject.toml` and place the code under `src/agenticapi/ext/`.
+
+AgenticAPI supports **optional extras** that wrap third-party libraries (LLM SDKs, framework adapters, domain-specific runtimes) without bloating the core package.
 
 ## Why a separate-package layout?
 
@@ -160,8 +168,8 @@ List it in `pyproject.toml` if your build backend needs it declared explicitly.
 ### End users
 
 ```bash
-pip install agenticapi                          # Core
-pip install agenticapi-claude-agent-sdk         # Add extension (pulls its deps)
+pip install agentharnessapi                          # Core
+pip install agentharnessapi-claude-agent-sdk         # Add extension (pulls its deps)
 ```
 
 Extensions should never be required for core to work. Handlers that need an extension either import it explicitly at module load, or guard the import behind a runtime check.

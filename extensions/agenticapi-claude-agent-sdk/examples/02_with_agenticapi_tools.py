@@ -1,7 +1,7 @@
 """Expose AgenticAPI tools to Claude through the SDK's MCP bridge.
 
 Prerequisites:
-    pip install agenticapi agenticapi-claude-agent-sdk
+    pip install agentharnessapi agentharnessapi-claude-agent-sdk
     export ANTHROPIC_API_KEY=sk-...
 
 Run:
@@ -19,10 +19,9 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from agenticapi import AgenticApp, CodePolicy
+from agenticapi.ext.claude_agent_sdk import ClaudeAgentRunner
 from agenticapi.runtime.tools.base import ToolCapability, ToolDefinition
 from agenticapi.runtime.tools.registry import ToolRegistry
-
-from agenticapi_claude_agent_sdk import ClaudeAgentRunner
 
 
 class ProductsTool:

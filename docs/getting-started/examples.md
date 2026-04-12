@@ -80,12 +80,12 @@ agenticapi dev --app examples.07_comprehensive.app:app
 
 **Demonstrates:** Multi-feature composition per endpoint: pipeline + A2A trust + multi-tool + approval + audit + sessions in each handler.
 
-## 08 — MCP Agent (requires `pip install agenticapi[mcp]`)
+## 08 — MCP Agent (requires `pip install agentharnessapi[mcp]`)
 
 Task tracker exposing select endpoints as MCP tools via the Model Context Protocol.
 
 ```bash
-pip install agenticapi[mcp]
+pip install agentharnessapi[mcp]
 uvicorn examples.08_mcp_agent.app:app --reload
 # Test MCP with the inspector:
 npx @modelcontextprotocol/inspector http://127.0.0.1:8000/mcp
@@ -155,13 +155,13 @@ curl -X POST http://127.0.0.1:8000/agent/todo.add -H "Content-Type: application/
 
 **Demonstrates:** `HtmxHeaders` auto-injection, `HTMLResult` for fragments and full pages, `htmx_response_headers()` for client-side control, conditional rendering based on `htmx.is_htmx`.
 
-## 13 — Claude Agent SDK (requires `agenticapi-claude-agent-sdk` extension)
+## 13 — Claude Agent SDK (requires `agentharnessapi[claude-agent-sdk]`)
 
 Runs a full Claude Agent SDK planning + tool-use loop inside an agent endpoint, with
 AgenticAPI policies bridged into the SDK permission system and audit trails preserved.
 
 ```bash
-pip install agenticapi-claude-agent-sdk
+pip install agentharnessapi[claude-agent-sdk]
 export ANTHROPIC_API_KEY="sk-ant-..."
 uvicorn examples.13_claude_agent_sdk.app:app --reload
 

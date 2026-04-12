@@ -5,7 +5,7 @@ every session is captured as an :class:`ExecutionTrace`. The trace
 is exposed at ``GET /audit/{trace_id}`` for inspection.
 
 Prerequisites:
-    pip install agenticapi agenticapi-claude-agent-sdk
+    pip install agentharnessapi agentharnessapi-claude-agent-sdk
     export ANTHROPIC_API_KEY=sk-...
 
 Run:
@@ -17,11 +17,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from agenticapi import AgenticApp
+from agenticapi.ext.claude_agent_sdk import ClaudeAgentRunner
 from agenticapi.harness.audit.recorder import AuditRecorder
 from starlette.responses import JSONResponse
 from starlette.routing import Route
-
-from agenticapi_claude_agent_sdk import ClaudeAgentRunner
 
 if TYPE_CHECKING:
     from starlette.requests import Request

@@ -119,7 +119,7 @@ $ uv run pytest tests/benchmarks/
 Extensions have their own test suites that run offline (no network, no API keys):
 
 ```bash
-$ uv run pytest extensions/agenticapi-claude-agent-sdk/tests
+$ uv run pytest tests/unit/ext/claude_agent_sdk/
 ```
 
 ---

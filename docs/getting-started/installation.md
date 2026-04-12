@@ -5,7 +5,13 @@
 - Python >= 3.13
 - pip or uv
 
-## Install from Source
+## Install from PyPI
+
+```bash
+pip install agentharnessapi
+```
+
+## Install from Source (development)
 
 ```bash
 git clone https://github.com/shibuiwilliam/AgenticAPI.git
@@ -38,7 +44,7 @@ AgenticAPI installs the following core dependencies:
 
 ```bash
 # MCP support (lightweight optional extra)
-pip install agenticapi[mcp]
+pip install agentharnessapi[mcp]
 
 # OpenTelemetry tracing (no-op unless installed)
 pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp
@@ -55,7 +61,7 @@ Heavyweight integrations are released as separate packages:
 
 ```bash
 # Claude Agent SDK (full agentic loop with policies and audit)
-pip install agenticapi-claude-agent-sdk
+pip install agentharnessapi[claude-agent-sdk]
 ```
 
 See the [Extensions guide](../internals/extensions.md) for the full list and how to build your own.

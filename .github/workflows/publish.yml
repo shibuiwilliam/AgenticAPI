@@ -1,7 +1,7 @@
-# Publish to PyPI on every push/merge to main.
+# Publish to PyPI and GitHub Packages on every push/merge to main.
 #
 # Setup (one-time):
-#   1. Go to https://pypi.org → Account Settings → Publishing →
+#   1. Go to https://pypi.org -> Account Settings -> Publishing ->
 #      "Add a new pending publisher"
 #   2. Fill in:
 #        PyPI project name:  agentharnessapi
@@ -9,14 +9,16 @@
 #        Repository:         AgenticAPI
 #        Workflow name:      publish.yml
 #        Environment name:   pypi
-#   3. Go to GitHub repo → Settings → Environments → New environment
+#   3. Go to GitHub repo -> Settings -> Environments -> New environment
 #      named "pypi" (this gates the deployment with a manual approval
 #      if you add a reviewer, or runs automatically if you don't).
 #
-# The workflow uses PyPI's "Trusted Publisher" (OIDC) — no API tokens
-# or passwords are stored in GitHub Secrets.
+# PyPI uses "Trusted Publisher" (OIDC) -- no API tokens stored.
+# GitHub Packages publishes to a GitHub Release with the built
+# wheel and sdist attached, making the package installable via:
+#   pip install https://github.com/shibuiwilliam/AgenticAPI/releases/download/v0.1.0/agentharnessapi-0.1.0-py3-none-any.whl
 
-name: Publish to PyPI
+name: Publish to PyPI & GitHub Packages
 
 on:
   push:
@@ -26,7 +28,7 @@ permissions:
   contents: read
 
 jobs:
-  # ── Gate: full CI must pass before publishing ──────────────────────
+  # -- Gate: full CI must pass before publishing ----------------------
   test:
     runs-on: ubuntu-latest
     steps:
@@ -43,7 +45,7 @@ jobs:
       - run: uv run mypy src/agenticapi/
       - run: uv run pytest --ignore=tests/benchmarks --ignore=tests/e2e -q
 
-  # ── Build sdist + wheel ────────────────────────────────────────────
+  # -- Build sdist + wheel --------------------------------------------
   build:
     needs: test
     runs-on: ubuntu-latest
@@ -59,8 +61,8 @@ jobs:
           name: dist
           path: dist/
 
-  # ── Publish to PyPI via Trusted Publisher (OIDC) ───────────────────
-  publish:
+  # -- Publish to PyPI via Trusted Publisher (OIDC) -------------------
+  publish-pypi:
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
@@ -72,3 +74,62 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  # -- Publish to GitHub Packages (GitHub Release) --------------------
+  #
+  # Creates a GitHub Release tagged with the package version and
+  # attaches the built wheel and sdist. This makes the package
+  # available via GitHub's package registry and direct URL install.
+  #
+  # Install from GitHub:
+  #   pip install https://github.com/shibuiwilliam/AgenticAPI/releases/latest/download/agentharnessapi-0.1.0-py3-none-any.whl
+  publish-github:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Extract version from pyproject.toml
+        id: version
+        run: |
+          version=$(python3 -c "
+          import tomllib, pathlib
+          data = tomllib.loads(pathlib.Path('pyproject.toml').read_text())
+          print(data['project']['version'])
+          ")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          version="${{ steps.version.outputs.version }}"
+
+          # Check if the release already exists
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "Release $tag already exists -- uploading artifacts"
+            gh release upload "$tag" dist/* --clobber
+          else
+            echo "Creating release $tag"
+            gh release create "$tag" dist/* \
+              --title "agentharnessapi $version" \
+              --notes "Published from commit ${{ github.sha }}.
+
+          Install from PyPI:
+          \`\`\`bash
+          pip install agentharnessapi==$version
+          \`\`\`
+
+          Install from GitHub:
+          \`\`\`bash
+          pip install https://github.com/${{ github.repository }}/releases/download/$tag/agentharnessapi-${version}-py3-none-any.whl
+          \`\`\`" \
+              --latest
+          fi

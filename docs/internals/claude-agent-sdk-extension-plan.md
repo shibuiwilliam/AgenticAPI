@@ -1,7 +1,12 @@
 # Claude Agent SDK Extension — Implementation Plan
 
-**Status:** Approved (Phase 1 — initial release)
-**Target version:** `agenticapi-claude-agent-sdk` v0.1.0
+> **Note (post-migration).** This extension has been merged into the main
+> package as `agentharnessapi[claude-agent-sdk]`. Import from
+> `agenticapi.ext.claude_agent_sdk`. This document is preserved as
+> historical design rationale.
+
+**Status:** Shipped (merged into main package as optional extra)
+**Target version:** `agentharnessapi[claude-agent-sdk]` (was `agenticapi-claude-agent-sdk` v0.1.0)
 **Owner:** Core team
 **Author:** Implementation plan generated 2026-04-10
 
@@ -21,8 +26,8 @@ audit trails, approval workflows, and tool registries.
 A user can:
 
 ```bash
-pip install agenticapi
-pip install agenticapi-claude-agent-sdk
+pip install agentharnessapi
+pip install agentharnessapi-claude-agent-sdk
 ```
 
 ```python

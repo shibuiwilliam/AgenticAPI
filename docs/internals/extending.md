@@ -345,7 +345,7 @@ Both are no-ops unless `opentelemetry-api` is installed. See [observability.md](
 
 ## Exposing Endpoints via MCP
 
-1. Install: `pip install agenticapi[mcp]`
+1. Install: `pip install agentharnessapi[mcp]`
 2. Mark endpoints: `@app.agent_endpoint(name="x", enable_mcp=True)`
 3. Mount: `expose_as_mcp(app)`
 4. Only `enable_mcp=True` endpoints become MCP tools

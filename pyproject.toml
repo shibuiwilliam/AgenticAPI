@@ -32,6 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.27.0"]
+claude-agent-sdk = ["claude-agent-sdk>=0.1.58,<0.2"]
 
 [dependency-groups]
 dev = [
@@ -99,6 +100,14 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "agenticapi.interface.compat.mcp"
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = "claude_agent_sdk.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "agenticapi.ext.claude_agent_sdk.*"
 warn_unused_ignores = false
 
 [tool.pytest.ini_options]

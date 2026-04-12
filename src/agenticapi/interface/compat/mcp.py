@@ -6,7 +6,7 @@ allowing the same agent to be accessed as MCP tools by LLM clients
 
 Requires the optional ``mcp`` package::
 
-    pip install agenticapi[mcp]
+    pip install agentharnessapi[mcp]
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-# Guard the optional dependency — mcp is an optional extra (pip install agenticapi[mcp])
+# Guard the optional dependency — mcp is an optional extra (pip install agentharnessapi[mcp])
 try:
     from mcp.server.fastmcp import FastMCP as _FastMCP
 except ImportError:
@@ -59,7 +59,7 @@ class MCPCompat:
         """
         if _FastMCP is None:
             raise ImportError(
-                "The 'mcp' package is required for MCP support. Install it with: pip install agenticapi[mcp]"
+                "The 'mcp' package is required for MCP support. Install it with: pip install agentharnessapi[mcp]"
             )
         self._app = app
         self._name = name or app.title

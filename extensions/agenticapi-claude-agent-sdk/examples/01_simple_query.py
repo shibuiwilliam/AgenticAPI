@@ -1,7 +1,7 @@
 """Minimal Claude Agent SDK runner inside an AgenticAPI endpoint.
 
 Prerequisites:
-    pip install agenticapi agenticapi-claude-agent-sdk
+    pip install agentharnessapi agentharnessapi-claude-agent-sdk
     export ANTHROPIC_API_KEY=sk-...
 
 Run:
@@ -16,8 +16,7 @@ Test:
 from __future__ import annotations
 
 from agenticapi import AgenticApp
-
-from agenticapi_claude_agent_sdk import ClaudeAgentRunner
+from agenticapi.ext.claude_agent_sdk import ClaudeAgentRunner
 
 app = AgenticApp(title="claude-agent-sdk demo — simple query")
 

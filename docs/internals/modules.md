@@ -40,7 +40,7 @@ src/agenticapi/
         compat/
             rest.py          RESTCompat, expose_as_rest — REST route generation
             fastapi.py       mount_fastapi, mount_in_agenticapi — ASGI mount
-            mcp.py           MCPCompat, expose_as_mcp — MCP server (optional: pip install agenticapi[mcp])
+            mcp.py           MCPCompat, expose_as_mcp — MCP server (optional: pip install agentharnessapi[mcp])
         a2a/
             protocol.py      A2AMessage, A2AMessageType, A2ARequest, A2AResponse
             capability.py    Capability, CapabilityRegistry

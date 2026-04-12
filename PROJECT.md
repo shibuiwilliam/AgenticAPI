@@ -572,8 +572,8 @@ AgenticAPI/
 ├── src/agenticapi/        ← Framework source
 ├── tests/                 ← unit / integration / e2e / benchmarks
 ├── examples/              ← 27 runnable example apps (01 → 27)
-├── extensions/            ← Separately-installable extensions
-│     └── agenticapi-claude-agent-sdk/
+├── extensions/            ← Historical (now merged as optional extras)
+│     └── agenticapi-claude-agent-sdk/  (use: pip install agentharnessapi[claude-agent-sdk])
 │
 ├── docs/                  ← mkdocs site (served at /docs URL)
 │   ├── index.md           ← Docs hub

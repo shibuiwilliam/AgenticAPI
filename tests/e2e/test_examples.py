@@ -1094,11 +1094,11 @@ class TestExample12Htmx:
 
 
 # ============================================================================
-# 13_claude_agent_sdk (requires the agenticapi-claude-agent-sdk extension)
+# 13_claude_agent_sdk (requires agentharnessapi[claude-agent-sdk] extra)
 # ============================================================================
 
 try:
-    import agenticapi_claude_agent_sdk  # noqa: F401
+    import agenticapi.ext.claude_agent_sdk  # noqa: F401
 
     _has_claude_sdk_extension = True
 except ImportError:
@@ -1296,7 +1296,7 @@ class TestExample13ClaudeAgentSDK:
     def stubbed_client(self) -> TestClient:
         """A client whose runner is wired up to a stub ``claude_agent_sdk``."""
         _install_stub_claude_agent_sdk()
-        from agenticapi_claude_agent_sdk import _imports as _ext_imports
+        from agenticapi.ext.claude_agent_sdk import _imports as _ext_imports
 
         _ext_imports._reset_cache_for_tests()
         # Force a fresh import of the example so the runner is rebuilt

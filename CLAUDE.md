@@ -8,7 +8,7 @@ AgenticAPI is a Python OSS framework that natively integrates coding agents into
 
 **Current status** (as of Increment 9, 2026-04-12). Core: **118 Python
 modules, ~21,944 LOC, 1,304 collected tests, 27 examples, 75 public
-exports**. Extensions: `agenticapi-claude-agent-sdk` v0.1.0 (~1,610 src
+exports**. Extensions: `agentharnessapi[claude-agent-sdk]` (~1,610 src
 LOC, 38 tests). **Phase A (control plane) is complete.** **Phase D
 (typed handlers + DI) core is complete** including schema-driven OpenAPI
 for typed `Intent[T]` request bodies (D7). Phases E / F have shipped
@@ -32,7 +32,7 @@ For the full plane-by-plane shipped / active / deferred matrix see
 ```bash
 uv sync --group dev              # Install all dependencies
 uv run agenticapi version        # Verify CLI works
-pip install -e ".[mcp]"          # Optional: MCP support
+pip install agentharnessapi[mcp]          # Optional: MCP support
 ```
 
 ### Testing
@@ -101,27 +101,24 @@ with their own `pyproject.toml`. Large or fast-moving dependencies
 stay out of the core package and live in extension packages so users
 only pay for what they use.
 
-**Current extensions:**
+**Current extras:**
 
-| Extension | Purpose | Deps |
-|---|---|---|
-| `agenticapi-claude-agent-sdk` | Wraps the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) for full planning + tool-use loops inside agent endpoints | `claude-agent-sdk>=0.1.58,<0.2` |
+| Extra | Install | Purpose | Deps |
+|---|---|---|---|
+| `claude-agent-sdk` | `pip install agentharnessapi[claude-agent-sdk]` | Claude Agent SDK loop inside agent endpoints | `claude-agent-sdk>=0.1.58,<0.2` |
+| `mcp` | `pip install agentharnessapi[mcp]` | MCP server support | `mcp>=1.27.0` |
 
 ```bash
-# Install the extension for development (no-deps so main package stays linked)
-uv pip install -e extensions/agenticapi-claude-agent-sdk --no-deps
-
 # Run extension tests (offline — uses a stub SDK module via conftest.py)
-uv run pytest extensions/agenticapi-claude-agent-sdk/tests
+uv run pytest tests/unit/ext/claude_agent_sdk/
 
 # Type-check the extension
-uv run mypy extensions/agenticapi-claude-agent-sdk/src
+uv run mypy src/agenticapi/ext/
 ```
 
 See:
-- [docs/internals/extensions.md](docs/internals/extensions.md) — Extensions architecture and contribution guide
+- [docs/internals/extensions.md](docs/internals/extensions.md) — Extensions architecture
 - [docs/internals/claude-agent-sdk-extension-plan.md](docs/internals/claude-agent-sdk-extension-plan.md) — Claude Agent SDK extension design rationale
-- [extensions/agenticapi-claude-agent-sdk/README.md](extensions/agenticapi-claude-agent-sdk/README.md) — User-facing docs
 
 ---
 
@@ -221,7 +218,7 @@ See [docs/internals/modules.md](docs/internals/modules.md) for the complete modu
 | `PlainTextResult` | `interface/response.py` | Plain text response |
 | `UploadFile` | `interface/upload.py` | Uploaded file data (filename, content, size) |
 | `UploadedFiles` | `interface/upload.py` | Handler param type for auto-injected uploaded files |
-| `MCPCompat` | `interface/compat/mcp.py` | MCP server (`pip install agenticapi[mcp]`) |
+| `MCPCompat` | `interface/compat/mcp.py` | MCP server (`pip install agentharnessapi[mcp]`) |
 | `RESTCompat` | `interface/compat/rest.py` | REST route generation |
 | `HtmxHeaders` | `interface/htmx.py` | HTMX request header detection (injected into handlers) |
 | `htmx_response_headers()` | `interface/htmx.py` | Build HTMX response headers (HX-Trigger, etc.) |
@@ -439,7 +436,7 @@ See [examples/README.md](examples/README.md) for the full examples guide.
 | `10_file_handling` | None | File upload/download: `UploadedFiles`, `FileResult`, streaming |
 | `11_html_responses` | None | Custom responses: `HTMLResult`, `PlainTextResult`, `FileResult` |
 | `12_htmx` | None | HTMX integration: `HtmxHeaders`, partial page updates, `htmx_response_headers` |
-| `13_claude_agent_sdk` | Claude Agent SDK | Full agentic loop via `agenticapi-claude-agent-sdk` extension |
+| `13_claude_agent_sdk` | Claude Agent SDK | Full agentic loop via `agentharnessapi[claude-agent-sdk]` |
 | `14_dependency_injection` | None | `Depends()`, nested deps, `yield` teardown, `@tool` decorator |
 | `15_budget_policy` | None | `BudgetPolicy`, `PricingRegistry`, HTTP 402, spend tracking |
 | `16_observability` | None | OTEL tracing, Prometheus `/metrics`, `SqliteAuditRecorder` |
@@ -497,7 +494,7 @@ See [examples/README.md](examples/README.md) for the full examples guide.
 
 ### Exposing Endpoints via MCP
 
-1. Install: `pip install agenticapi[mcp]`
+1. Install: `pip install agentharnessapi[mcp]`
 2. Mark endpoints: `@app.agent_endpoint(name="search", enable_mcp=True)`
 3. Mount: `expose_as_mcp(app)`
 4. Test: `npx @modelcontextprotocol/inspector http://localhost:8000/mcp`
@@ -632,7 +629,7 @@ Extensions live under `extensions/<package-name>/` with their own `pyproject.tom
 3. Use **lazy imports** for the wrapped library so `import my_extension` never fails even when the optional dep is absent. Raise a friendly `*NotInstalledError` on first use.
 4. Tests must run **offline**: install a stub module in `conftest.py` that mimics the wrapped library's public surface.
 5. Errors should inherit from `agenticapi.AgenticAPIError` so callers can catch both core and extension errors uniformly.
-6. Reference: `extensions/agenticapi-claude-agent-sdk/` and `docs/internals/extensions.md`.
+6. Reference: `src/agenticapi/ext/claude_agent_sdk/` and `docs/internals/extensions.md`.
 
 ## Forward Tracks — Implementation Guide
 
