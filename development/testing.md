@@ -1,228 +1,200 @@
-# Testing Guide
+# Testing Strategy and Conventions
 
-## Test Suite Overview
+---
 
-### Core Package (`tests/`)
+## Test Directory Structure
 
-| Category | Files | Tests | Purpose |
-|---|---|---|---|
-| Unit tests | 51 | ~613 | Individual module correctness |
-| Integration tests | 4 | ~28 | Cross-module interaction |
-| E2E tests | 2 | ~100 | Full HTTP request cycle + all 12 example apps |
-| Benchmarks | 4 | 10 | Performance regression detection |
-| **Total** | **67** | **713** | **87% code coverage** |
+```
+tests/
+    conftest.py              # Shared fixtures (e.g. mock backends, test apps)
+    unit/                    # Fast, isolated tests (no network, no subprocess)
+        test_app.py          # AgenticApp core behavior
+        test_intent.py       # IntentParser, IntentScope
+        test_security.py     # Auth schemes, Authenticator
+        test_streaming.py    # AgentStream, events, transports
+        test_typed_intents.py # Intent[T] generic injection
+        test_openapi.py      # OpenAPI schema generation
+        test_htmx.py         # HtmxHeaders, htmx_response_headers
+        test_file_upload.py  # UploadedFiles injection
+        test_custom_responses.py # HTMLResult, PlainTextResult, FileResult
+        test_route_dependencies.py # Route-level Depends
+        test_dx_integration.py # DI + response_model + @tool integration
+        test_params.py       # Query/Header extraction
+        test_compat.py       # REST/MCP compatibility
+        harness/             # Policy, sandbox, audit, approval tests
+        runtime/             # LLM backends, tools, memory, context
+        dependencies/        # Scanner, solver tests
+        observability/       # Tracing, metrics, propagation
+        ops/                 # OpsAgent tests
+        a2a/                 # Agent-to-agent protocol
+        application/         # DynamicPipeline
+    integration/             # Multi-component tests (may use subprocess)
+    e2e/                     # Full HTTP request tests against example apps
+        test_examples.py     # Exercises all 23 example apps
+    benchmarks/              # Performance regression tests
+```
 
-### Extension Tests
-
-Extensions under `extensions/<name>/tests/` maintain their own suites with stubbed dependencies so they run offline.
-
-| Extension | Test files | Tests | Notes |
-|---|---|---|---|
-| `agenticapi-claude-agent-sdk` | 7 | 38 | Uses a stub `claude_agent_sdk` module installed by `conftest.py`; no network or real SDK required |
+---
 
 ## Running Tests
 
 ```bash
-# All tests
-uv run pytest
+# All tests (unit + integration + e2e), excludes benchmarks
+uv run pytest --ignore=tests/benchmarks -q
 
-# Exclude benchmarks (faster)
-uv run pytest --ignore=tests/benchmarks
+# Specific directory or file
+uv run pytest tests/unit/harness/ -xvs
+uv run pytest tests/unit/test_streaming.py -xvs
 
 # With coverage
-uv run pytest --cov=src/agenticapi --cov-report=term-missing
+uv run pytest --cov=src/agenticapi
 
-# Specific module
-uv run pytest tests/unit/harness/test_static_analysis.py -xvs
-
-# Only benchmarks
-uv run pytest tests/benchmarks/
-
-# Only E2E (exercises all 12 examples)
-uv run pytest tests/e2e/ -v
-
-# Skip tests requiring LLM API keys
+# Skip tests that require real LLM API keys
 uv run pytest -m "not requires_llm"
 
-# Using Makefile
-make test           # All tests
-make test-cov       # With coverage
-make test-unit      # Unit only
-make test-e2e       # E2E only
-make test-benchmark # Benchmarks only
-make ci             # Full CI: lint + typecheck + test
+# E2E only
+uv run pytest tests/e2e/ -v
 
-# Extension tests (run manually — not yet in root CI)
-uv pip install -e extensions/agenticapi-claude-agent-sdk --no-deps
-uv run pytest extensions/agenticapi-claude-agent-sdk/tests
+# Benchmarks only
+uv run pytest tests/benchmarks/
 ```
 
-## Test Patterns
+---
 
-### AgentTestCase (base class)
+## Writing Tests for New Features
+
+### Unit test pattern
+
+Every new module should have a corresponding test file. Place it in the matching subdirectory:
+
+- `src/agenticapi/harness/policy/foo_policy.py` -> `tests/unit/harness/test_foo_policy.py`
+- `src/agenticapi/runtime/tools/bar_tool.py` -> `tests/unit/runtime/test_bar_tool.py`
+
+Standard structure:
 
 ```python
-from agenticapi.testing import AgentTestCase
-from agenticapi.harness.policy.code_policy import CodePolicy
+"""Tests for agenticapi.harness.policy.foo_policy."""
+from __future__ import annotations
+import pytest
+from agenticapi.harness.policy.foo_policy import FooPolicy
 
-class TestMyAgent(AgentTestCase):
-    def setup_method(self):
-        self.setup_app(
-            policies=[CodePolicy(denied_modules=["os"])],
-            llm_responses=["result = 42"],
-        )
+class TestFooPolicy:
+    def test_allows_clean_input(self) -> None:
+        policy = FooPolicy()
+        result = policy.evaluate(code="clean input", intent_action="read", intent_domain="data")
+        assert result.allowed
 
-    async def test_process_intent(self):
-        @self.app.agent_endpoint(name="test")
-        async def handler(intent, context):
-            return {"ok": True}
-
-        response = await self.process_intent("show data")
-        assert response.status == "completed"
+    def test_denies_bad_input(self) -> None:
+        policy = FooPolicy()
+        result = policy.evaluate(code="bad input", intent_action="write", intent_domain="data")
+        assert not result.allowed
+        assert result.violations
 ```
 
-### Mock LLM
+### Using MockBackend
+
+`MockBackend` (from `runtime/llm/mock.py`) is the standard way to test LLM-dependent code without network calls:
 
 ```python
-from agenticapi.testing import mock_llm
+from agenticapi.runtime.llm.mock import MockBackend
 
-with mock_llm(responses=["SELECT COUNT(*) FROM orders"]) as backend:
-    response = await backend.generate(prompt)
-    assert response.content == "SELECT COUNT(*) FROM orders"
-    assert backend.call_count == 1
-    assert backend.prompts[0].system  # inspect sent prompts
-```
-
-### Mock Sandbox
-
-```python
-from agenticapi.testing import MockSandbox
-
-sandbox = MockSandbox(
-    allowed_results={"result = 42": 42},
-    denied_operations=["DROP TABLE"],
-)
-async with sandbox as sb:
-    result = await sb.execute("result = 42")
-    assert result.return_value == 42
-```
-
-### Safety Assertions
-
-```python
-from agenticapi.testing import assert_code_safe, assert_policy_enforced, assert_intent_parsed
-from agenticapi.interface.intent import IntentAction
-
-assert_code_safe("x = 1 + 2")                          # passes
-assert_code_safe("import os", denied_modules=["os"])    # raises AssertionError
-assert_policy_enforced("x = 1", [CodePolicy()])         # passes
-assert_intent_parsed("show orders", IntentAction.READ)  # passes
-```
-
-### Factory Fixtures
-
-```python
-from agenticapi.testing import create_test_app
-
-app = create_test_app(
-    policies=[CodePolicy(denied_modules=["os"])],
-    llm_responses=["result = 1"],
-    title="Test",
+backend = MockBackend(
+    default_response="result = 42",        # What generate() returns
+    default_intent_action="read",          # What intent parsing returns
+    default_intent_domain="data",
 )
 ```
 
-### E2E Example Tests
+`MockBackend` implements the full `LLMBackend` protocol. Use it for:
+- Testing `CodeGenerator` without a real LLM.
+- Testing `IntentParser` with controlled classification.
+- Testing harness pipeline end-to-end.
 
-The E2E test suite exercises all 12 example apps via HTTP TestClient:
+### Testing AgenticApp endpoints
+
+Use Starlette's `TestClient` for synchronous HTTP testing:
 
 ```python
-# tests/e2e/test_examples.py
-# - Imports each example app
-# - Sends requests to every endpoint
-# - Validates health checks, intent processing, error codes
-# - Tests session continuity, scope enforcement, approval triggers
-# - Skips examples requiring unavailable API keys
+from starlette.testclient import TestClient
+from agenticapi import AgenticApp
+
+app = AgenticApp(title="test")
+
+@app.agent_endpoint(name="greet")
+async def greet(intent, context):
+    return {"message": "hello"}
+
+client = TestClient(app)
+response = client.post("/agent/greet", json={"intent": "say hello"})
+assert response.status_code == 200
+data = response.json()
+assert data["result"]["message"] == "hello"
 ```
 
-## Performance Benchmarks
+---
 
-| Benchmark | Target | File |
-|---|---|---|
-| Intent parsing (keyword) | < 50ms | `bench_intent_parsing.py` |
-| Policy evaluation (4 policies) | < 15ms | `bench_policy_evaluation.py` |
-| Static analysis (1000 lines) | < 50ms | `bench_static_analysis.py` |
-| Sandbox startup + execution | < 100ms | `bench_sandbox_startup.py` |
+## E2E Test Pattern (`test_examples.py`)
 
-Run with: `uv run pytest tests/benchmarks/ --benchmark-only`
+The e2e test suite exercises every example app with real HTTP requests. The pattern:
 
-## Test File Organization
+1. **`_load_app(module_path)`** — Imports the example module and returns its `app` object.
+2. **`_post_intent(client, endpoint, intent)`** — POSTs an intent JSON body to `/agent/{endpoint}`, asserts status in `expected_statuses`, returns parsed JSON.
+3. **`_assert_health_ok(client)`** — GETs `/health` and asserts `status == "ok"`.
+4. **`_parse_sse_events(body)`** — Parses SSE frames from streaming responses.
 
+Each example gets its own test class (e.g. `TestExample01HelloAgent`) with a `@pytest.fixture` that creates the `TestClient`:
+
+```python
+class TestExample01HelloAgent:
+    @pytest.fixture
+    def client(self) -> TestClient:
+        app = _load_app("examples.01_hello_agent.app")
+        return TestClient(app)
+
+    def test_health(self, client: TestClient) -> None:
+        _assert_health_ok(client)
+
+    def test_greet(self, client: TestClient) -> None:
+        data = _post_intent(client, "greet", "Hello world")
+        assert data["status"] == "completed"
 ```
-tests/
-    conftest.py                  Shared fixtures (sample_intent_raw, sample_code, dangerous_code)
-    unit/
-        test_app.py              AgenticApp creation, HTTP endpoints, error status codes (25 tests)
-        test_intent.py           Intent model, IntentAction, IntentParser, IntentScope (30 tests)
-        test_session.py          Session TTL, SessionManager CRUD, cleanup (20 tests)
-        test_response.py         AgentResponse serialization, ResponseFormatter (18 tests)
-        test_security.py         Authentication, authorization, all 4 schemes (39 tests)
-        test_openapi.py          OpenAPI schema, Swagger UI, ReDoc, disabling (12 tests)
-        test_background_tasks.py AgentTasks add/execute/error handling (11 tests)
-        test_mcp_compat.py       MCP compatibility layer (27 tests)
-        test_file_response.py    FileResult and custom response types (12 tests)
-        test_file_upload.py      UploadFile, UploadedFiles multipart handling (7 tests)
-        test_custom_responses.py HTMLResult, PlainTextResult, Response passthrough (10 tests)
-        test_params.py           HarnessDepends dependency injection (3 tests)
-        test_fixtures.py         create_test_app factory (5 tests)
-        test_mock_sandbox.py     MockSandbox patterns (8 tests)
-        test_compat.py           REST route generation, FastAPI mount (12 tests)
-        test_bugfix_regressions.py  Regression tests for all bug fixes (17 tests)
-        test_agent_test_case.py  AgentTestCase helper class (13 tests)
-        test_benchmark_runner.py BenchmarkRunner execution (8 tests)
-        test_cli_console.py      CLI console interface (5 tests)
-        test_htmx.py             HtmxHeaders parsing, htmx_response_headers builder (9 tests)
-        harness/
-            test_code_policy.py        CodePolicy: denied modules, eval/exec (16 tests)
-            test_data_policy.py        DataPolicy: DDL, DML, table access (16 tests)
-            test_policy_evaluator.py   PolicyEvaluator aggregation (10 tests)
-            test_runtime_policy.py     RuntimePolicy: complexity limits (8 tests)
-            test_static_analysis.py    AST safety checks (29 tests)
-            test_sandbox.py            ProcessSandbox execution (14 tests)
-            test_approval.py           Approval workflow, rules, notifiers (21 tests)
-            test_monitors.py           Resource and output monitors (8 tests)
-            test_validators.py         Output validation (9 tests)
-            test_audit_recorder.py     Audit recording (9 tests)
-            test_audit_exporters.py    Audit export formats (8 tests)
-        runtime/
-            test_code_generator.py     Code generation from intents (9 tests)
-            test_context.py            AgentContext, ContextWindow (15 tests)
-            test_tool_registry.py      Tool registration and discovery (9 tests)
-            test_llm_backend.py        Base LLM backend interface (11 tests)
-            test_openai_backend.py     OpenAI API integration (15 tests)
-            test_gemini_backend.py     Google Gemini API integration (15 tests)
-            test_prompts.py            LLM prompting and templates (15 tests)
-            test_http_client_tool.py   HTTP client tool (11 tests)
-            test_cache_tool.py         Caching tool (12 tests)
-            test_queue_tool.py         Queue tool (14 tests)
-        application/
-            test_pipeline.py           DynamicPipeline stages, ordering (12 tests)
-        ops/
-            test_ops_base.py           OpsAgent lifecycle, severity gating (10 tests)
-        a2a/
-            test_protocol.py           A2A message types and routing (8 tests)
-            test_capability.py         Agent capability negotiation (7 tests)
-            test_trust.py              Trust and permission management (10 tests)
-    integration/
-        test_auth_flow.py        Full authentication flow through HTTP (11 tests)
-        test_harness_flow.py     Harness blocking dangerous code (10 tests)
-        test_endpoint_flow.py    Complete endpoint request flow (4 tests)
-        test_fastapi_compat.py   FastAPI mount compatibility (3 tests)
-    e2e/
-        test_examples.py         All 12 example apps with HTTP requests (90 tests)
-        test_full_request_cycle.py  Complete pipeline: LLM -> harness -> sandbox (10 tests)
-    benchmarks/
-        bench_intent_parsing.py     Intent parsing performance
-        bench_policy_evaluation.py  Policy evaluation speed
-        bench_static_analysis.py    Static analysis performance
-        bench_sandbox_startup.py    Sandbox startup time
+
+Tests are written to pass regardless of whether LLM API keys are set. When keys are absent, examples run in direct-handler mode.
+
+### Adding e2e tests for a new example
+
+1. Add a new test class in `tests/e2e/test_examples.py`.
+2. Always test `/health` and at least one endpoint.
+3. Use `expected_statuses={200, 202}` when the endpoint may trigger approval workflows.
+4. For streaming endpoints, use `_parse_sse_events` to verify event structure.
+
+---
+
+## Performance Targets
+
+These targets are regression thresholds. Benchmarks in `tests/benchmarks/` verify them.
+
+| Component | Target |
+|---|---|
+| `IntentParser.parse()` (keyword mode) | < 50ms |
+| `PolicyEvaluator.evaluate()` | < 15ms |
+| Static analysis (`check_code_safety`, 1000 lines) | < 50ms |
+| `ProcessSandbox` startup | < 100ms |
+
+---
+
+## Test-First Workflow
+
+1. Write the test first (it should fail).
+2. Implement the minimum code to make it pass.
+3. Refactor.
+4. Run the quality gates:
+
+```bash
+uv run ruff format src/ tests/ examples/
+uv run ruff check src/ tests/ examples/
+uv run mypy src/agenticapi/
+uv run pytest --ignore=tests/benchmarks
 ```
+
+All four must pass before a feature is considered complete.

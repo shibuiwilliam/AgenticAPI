@@ -1,13 +1,21 @@
 # Architecture
 
+!!! note
+    This page describes the public architecture. For implementation caveats around `BudgetPolicy`, native tool calling, and typed-intent schema enforcement, see [Development -> Current State](../internals/current-state.md).
+
 ## Layer Structure
 
 ```
 HTTP Request (ASGI)
-  -> Interface Layer    Intent parsing, session management, response formatting
+  -> Trace Extraction   W3C traceparent header -> OpenTelemetry Context (if OTel installed)
+  -> Authentication     Scheme extraction + verify function (if auth= configured)
+  -> Interface Layer    Intent parsing (incl. Intent[T] typed payloads), sessions, response formatting
+  -> Dependencies       FastAPI-style Depends() resolution with async teardown
   -> Harness Engine     Policy evaluation, static analysis, approval workflows
-  -> Agent Runtime      LLM code generation, context assembly, tool registry
+  -> Agent Runtime      Tool-first dispatch or LLM code generation, context assembly, tool registry
   -> Sandbox            Isolated process execution with resource limits
+  -> Audit              In-memory or SqliteAuditRecorder persistent storage
+  -> Observability      OpenTelemetry spans, Prometheus metrics, partial automatic cost attribution
   -> Response           Structured result with generated code, reasoning, trace ID
 ```
 
@@ -16,13 +24,15 @@ All requests flow top-to-bottom. Each layer is independently testable and depend
 ## Module Dependency Graph
 
 ```
-agenticapi.interface  -> agenticapi.harness, agenticapi.runtime
-agenticapi.harness    -> agenticapi.runtime (interface portion only)
-agenticapi.runtime    -> external dependencies only (LLM SDK, httpx, etc.)
-agenticapi.application-> agenticapi.runtime, agenticapi.harness
-agenticapi.ops        -> agenticapi.runtime, agenticapi.harness, agenticapi.application
-agenticapi.cli        -> all modules
-agenticapi.testing    -> all modules
+agenticapi.dependencies -> (none — standalone injection layer)
+agenticapi.interface    -> agenticapi.harness, agenticapi.runtime, agenticapi.dependencies
+agenticapi.harness      -> agenticapi.runtime (interface portion only)
+agenticapi.runtime      -> external dependencies only (LLM SDK, httpx, etc.)
+agenticapi.observability-> optional external (opentelemetry, prometheus), no-op otherwise
+agenticapi.application  -> agenticapi.runtime, agenticapi.harness
+agenticapi.ops          -> agenticapi.runtime, agenticapi.harness, agenticapi.application
+agenticapi.cli          -> all modules
+agenticapi.testing      -> all modules
 ```
 
 **Prohibited dependencies:**
@@ -53,37 +63,44 @@ Resolve endpoint -> AgentEndpointDef
 Get or create session -> Session (with TTL-based expiration)
     |
     v
-IntentParser.parse() -> Intent
-    |-- With LLM: structured JSON extraction via prompt
+IntentParser.parse() -> Intent (or Intent[T] with validated payload)
+    |-- With LLM: structured JSON extraction via prompt; for Intent[T], schema is forwarded
     |-- Without LLM: keyword-based classification
     |
     v
 Check IntentScope.matches(intent) -> PolicyViolation if denied
     |
     v
-Build AgentContext (trace_id, endpoint_name, session_id)
+Build AgentContext (trace_id, endpoint_name, session_id, auth_user)
+    |
+    v
+Resolve Depends() tree using the precomputed InjectionPlan (per-request cache, async generators)
     |
     v
 Execute intent:
     |
     |-- [LLM + Harness path]:
-    |   1. Pre-fetch tool data (call registered tools)
-    |   2. CodeGenerator.generate() -> Python code (with data sample in prompt)
-    |   3. HarnessEngine.execute():
+    |   1. Try tool-first dispatch when tools are registered and the LLM returns exactly one ToolCall
+    |   2. Pre-fetch tool data (call registered tools)
+    |   3. CodeGenerator.generate() -> Python code (with data sample in prompt)
+    |   4. HarnessEngine.execute():
     |      a. PolicyEvaluator.evaluate() (CodePolicy, DataPolicy, ResourcePolicy, RuntimePolicy)
     |      b. Static AST analysis (imports, eval/exec, dangerous builtins, file I/O)
     |      c. ApprovalWorkflow check (raise ApprovalRequired if needed)
     |      d. ProcessSandbox.execute() (isolated subprocess with timeout)
     |      e. Post-execution monitors (resource usage, output size)
     |      f. Post-execution validators (JSON serializable, read-only check)
-    |      g. AuditRecorder.record() (full ExecutionTrace)
-    |   4. Return ExecutionResult -> AgentResponse
+    |      h. AuditRecorder.record() (full ExecutionTrace)
+    |   5. Return ExecutionResult -> AgentResponse
     |
     |-- [Direct handler path]:
-    |   1. Inject AgentTasks, UploadedFiles, HtmxHeaders if handler declares them
+    |   1. Inject AgentTasks, UploadedFiles, HtmxHeaders, Depends() values as declared
     |   2. Call handler(intent, context, ...)
     |   3. If result is Response/FileResult -> pass through (file download)
     |   4. Otherwise -> wrap result in AgentResponse
+    |
+    v
+Emit observability signals: span events, latency histogram, and any LLM metrics recorded on that path
     |
     v
 Execute background tasks (AgentTasks) if any
@@ -104,18 +121,22 @@ Return response:
 | `FastAPI` | `AgenticApp` | Main ASGI application |
 | `@app.get("/path")` | `@app.agent_endpoint(name=...)` | Endpoint registration |
 | `APIRouter` | `AgentRouter` | Endpoint grouping with prefix/tags |
-| `Request` | `Intent` | Input (natural language -> structured) |
+| `Request` | `Intent` / `Intent[T]` | Input (natural language -> structured, optionally typed) |
 | `Response` | `AgentResponse` | Output with result, reasoning, trace |
+| `Depends()` | `Depends()` | FastAPI-compatible dependency injection |
 | `BackgroundTasks` | `AgentTasks` | Post-response task execution |
 | `UploadFile` | `UploadedFiles` | File upload via multipart |
 | `FileResponse` | `FileResult` | File download helper |
 | `HTMLResponse` | `HTMLResult` | HTML response |
+| `PlainTextResponse` | `PlainTextResult` | Plain text response |
 | — | `HtmxHeaders` | HTMX request header detection (auto-injected) |
+| Typed request schema | `Intent[T]` | Typed intent payload parsing |
+| `@app.get(..., response_model=T)` | `@app.agent_endpoint(..., response_model=T)` | Typed response validation and OpenAPI publication |
 | Security schemes | `Authenticator` | API key, Bearer, Basic auth |
-| `Depends()` | `HarnessDepends()` | Dependency injection |
 | `app.add_middleware()` | `app.add_middleware()` | Starlette middleware (CORS, compression) |
 | Middleware stack | + `DynamicPipeline` | DynamicPipeline is for agent context enrichment inside handlers |
 | Pydantic model | Pydantic model | Schema definitions |
+| OpenTelemetry via middleware | `agenticapi.observability` | Built-in tracing + metrics, no-op if not installed |
 | ASGI interface | ASGI interface | Direct uvicorn compatibility |
 
 ## Approval Resolution Flow
@@ -194,7 +215,7 @@ async def search(intent, context):
 
 # Expose MCP-enabled endpoints at /mcp
 from agenticapi.interface.compat import expose_as_mcp
-app.add_routes(expose_as_mcp(app))
+expose_as_mcp(app)
 ```
 
 Test with MCP Inspector: `npx @modelcontextprotocol/inspector http://localhost:8000/mcp`

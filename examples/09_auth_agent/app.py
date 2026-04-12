@@ -12,25 +12,25 @@ Run with:
 
 Test with curl:
     # Public endpoint (no auth needed)
-    curl -X POST http://127.0.0.1:8000/agent/info.public \\
-        -H "Content-Type: application/json" \\
+    curl -X POST http://127.0.0.1:8000/agent/info.public \
+        -H "Content-Type: application/json" \
         -d '{"intent": "What services are available?"}'
 
     # Protected endpoint WITHOUT auth (returns 401)
-    curl -X POST http://127.0.0.1:8000/agent/info.protected \\
-        -H "Content-Type: application/json" \\
+    curl -X POST http://127.0.0.1:8000/agent/info.protected \
+        -H "Content-Type: application/json" \
         -d '{"intent": "Show user details"}'
 
     # Protected endpoint WITH valid auth
-    curl -X POST http://127.0.0.1:8000/agent/info.protected \\
-        -H "Content-Type: application/json" \\
-        -H "X-API-Key: alice-key-001" \\
+    curl -X POST http://127.0.0.1:8000/agent/info.protected \
+        -H "Content-Type: application/json" \
+        -H "X-API-Key: alice-key-001" \
         -d '{"intent": "Show user details"}'
 
     # Admin endpoint with admin key
-    curl -X POST http://127.0.0.1:8000/agent/info.admin \\
-        -H "Content-Type: application/json" \\
-        -H "X-API-Key: admin-key-999" \\
+    curl -X POST http://127.0.0.1:8000/agent/info.admin \
+        -H "Content-Type: application/json" \
+        -H "X-API-Key: admin-key-999" \
         -d '{"intent": "Show all users"}'
 
     # Health check

@@ -6,6 +6,7 @@ Demonstrates:
 - FileResult with text/html media type for HTML file downloads
 - Direct Starlette Response passthrough (HTMLResponse, StreamingResponse)
 - Mixed endpoints: some return JSON (default), others return HTML or text
+- GET / index page with HTML forms — browser-friendly entry point
 
 Run with:
     uvicorn examples.11_html_responses.app:app --reload
@@ -13,7 +14,14 @@ Run with:
 Or using the CLI:
     agenticapi dev --app examples.11_html_responses.app:app
 
+Then open http://127.0.0.1:8000 in your browser to navigate the demo
+via clickable buttons. Each button submits an HTML form (POST) to one
+of the agent endpoints and displays the result.
+
 Test with curl:
+    # The index page (browser entry point)
+    curl http://127.0.0.1:8000/
+
     # HTML page
     curl -X POST http://127.0.0.1:8000/agent/pages.home \
         -H "Content-Type: application/json" \
@@ -47,11 +55,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from starlette.responses import HTMLResponse
+from starlette.routing import Route
+
 from agenticapi import AgenticApp, Intent
 from agenticapi.interface.response import FileResult, HTMLResult, PlainTextResult
 from agenticapi.routing import AgentRouter
 
 if TYPE_CHECKING:
+    from starlette.requests import Request
+
     from agenticapi.runtime.context import AgentContext
 
 # ---------------------------------------------------------------------------
@@ -199,3 +212,85 @@ async def json_api(intent: Intent, context: AgentContext) -> dict[str, object]:
 
 
 app.include_router(pages)
+
+
+# ---------------------------------------------------------------------------
+# Browser entry point: GET / serves an index with forms
+# ---------------------------------------------------------------------------
+#
+# Agent endpoints only respond to POST /agent/{name}, so navigating to them
+# directly in a browser returns 405. We register a plain Starlette GET /
+# route that renders an index page with HTML forms — clicking each button
+# submits a POST to the corresponding agent endpoint, and the browser
+# displays whatever the endpoint returns (HTML page, plain text, file
+# download, or JSON).
+
+
+_INDEX_HTML = _page(
+    "AgenticAPI HTML Examples",
+    """\
+<h1>AgenticAPI HTML Examples</h1>
+<p>This page demonstrates the different response types you can return from an
+agent endpoint. Click any button below to POST to the corresponding endpoint
+and see the result. Use your browser's <strong>Back</strong> button to return.</p>
+
+<div class="card">
+    <h3>1. HTMLResult — full HTML page</h3>
+    <p>Returns a styled HTML page with <code>Content-Type: text/html</code>.</p>
+    <form method="post" action="/agent/pages.home">
+        <input type="hidden" name="intent" value="Show the home page">
+        <button type="submit">View Home Page</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>2. HTMLResult — dynamic search page</h3>
+    <p>Returns an HTML page with results based on the query.</p>
+    <form method="post" action="/agent/pages.search">
+        <input type="text" name="intent" value="Python tutorials" style="padding: 0.4rem; width: 60%;">
+        <button type="submit">Search</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>3. PlainTextResult — text response</h3>
+    <p>Returns <code>Content-Type: text/plain</code>.</p>
+    <form method="post" action="/agent/pages.status">
+        <input type="hidden" name="intent" value="Check system status">
+        <button type="submit">View Status</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>4. FileResult — downloadable HTML report</h3>
+    <p>Returns a file with <code>Content-Disposition: attachment</code>
+       so the browser downloads it instead of displaying it.</p>
+    <form method="post" action="/agent/pages.report">
+        <input type="hidden" name="intent" value="Generate a Q1 report">
+        <button type="submit">Download Report</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>5. JSON (default AgentResponse)</h3>
+    <p>The standard AgenticAPI response — JSON wrapping the handler's return value.</p>
+    <form method="post" action="/agent/pages.api">
+        <input type="hidden" name="intent" value="Get API data">
+        <button type="submit">View JSON Response</button>
+    </form>
+</div>
+
+<p style="margin-top: 2rem; color: #6b7280; font-size: 0.9rem;">
+    Endpoints accept both <code>application/json</code> (programmatic clients)
+    and <code>application/x-www-form-urlencoded</code> (HTML forms like the ones
+    above). The framework auto-detects the content type.
+</p>""",
+)
+
+
+async def index(request: Request) -> HTMLResponse:
+    """Serve the index page on GET /. Browser entry point."""
+    return HTMLResponse(content=_INDEX_HTML)
+
+
+app.add_routes([Route("/", index, methods=["GET"])])

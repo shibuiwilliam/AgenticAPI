@@ -103,3 +103,26 @@ records = harness.audit_recorder.get_records(endpoint_name="orders", limit=50)
 for trace in records:
     print(f"[{trace.timestamp}] {trace.intent_raw} -> {trace.execution_duration_ms}ms")
 ```
+
+### Choosing a recorder
+
+Two recorders ship in the box, both satisfying the same `AuditRecorderProtocol`:
+
+| Recorder | Storage | When to use |
+|---|---|---|
+| `InMemoryAuditRecorder` | Process memory, bounded ring buffer | Dev, tests, single-process demos |
+| `SqliteAuditRecorder` | Local SQLite file (stdlib `sqlite3`) | Production, dashboards, post-mortems |
+
+```python
+from agenticapi.harness import HarnessEngine
+from agenticapi.harness.audit import SqliteAuditRecorder
+
+recorder = SqliteAuditRecorder(path="./audit.sqlite", max_traces=100_000)
+harness = HarnessEngine(audit_recorder=recorder, policies=[...])
+```
+
+`SqliteAuditRecorder` serializes writes behind an `asyncio.Lock` and dispatches blocking SQLite work through `asyncio.to_thread`, so it's safe to share across concurrent requests without blocking the event loop. Two indices are created on first use — `(timestamp DESC)` and `(endpoint_name)` — keeping the standard dashboard queries fast.
+
+Additional helpers beyond the shared protocol: `iter_since(datetime)` for streaming recent traces to a dashboard, `vacuum_older_than(cutoff)` for retention policies, and `count()` / `clear()` / `close()` for administrative workflows.
+
+See [API Reference → Audit](../api/audit.md) for the full signatures.

@@ -128,35 +128,61 @@ class CodeGenerator:
             tool_count=len(tool_definitions),
         )
 
-        try:
-            response = await self._llm.generate(prompt)
-        except CodeGenerationError:
-            raise
-        except Exception as exc:
-            logger.error("code_generation_llm_failed", trace_id=context.trace_id, error=str(exc))
-            raise CodeGenerationError(f"LLM call failed during code generation: {exc}") from exc
+        from agenticapi.observability import (
+            AgenticAPIAttributes,
+            GenAIAttributes,
+            SpanNames,
+            get_tracer,
+        )
 
-        code = _extract_code(response.content or "")
-        if not code.strip():
-            logger.error(
-                "code_generation_empty", trace_id=context.trace_id, raw_response=(response.content or "")[:200]
+        tracer = get_tracer()
+        with tracer.start_as_current_span(SpanNames.CODE_GENERATE.value) as gen_span:
+            gen_span.set_attribute(AgenticAPIAttributes.INTENT_ACTION.value, intent_action)
+            gen_span.set_attribute(AgenticAPIAttributes.INTENT_DOMAIN.value, intent_domain)
+            with tracer.start_as_current_span(SpanNames.GEN_AI_CHAT.value) as llm_span:
+                llm_span.set_attribute(GenAIAttributes.OPERATION_NAME.value, "code_generate")
+                llm_span.set_attribute(GenAIAttributes.REQUEST_MODEL.value, self._llm.model_name)
+                llm_span.set_attribute(GenAIAttributes.REQUEST_MAX_TOKENS.value, prompt.max_tokens)
+                llm_span.set_attribute(GenAIAttributes.REQUEST_TEMPERATURE.value, prompt.temperature)
+                try:
+                    response = await self._llm.generate(prompt)
+                except CodeGenerationError as exc:
+                    llm_span.record_exception(exc)
+                    raise
+                except Exception as exc:
+                    logger.error("code_generation_llm_failed", trace_id=context.trace_id, error=str(exc))
+                    llm_span.record_exception(exc)
+                    raise CodeGenerationError(f"LLM call failed during code generation: {exc}") from exc
+
+                llm_span.set_attribute(GenAIAttributes.RESPONSE_MODEL.value, response.model)
+                llm_span.set_attribute(GenAIAttributes.USAGE_INPUT_TOKENS.value, response.usage.input_tokens)
+                llm_span.set_attribute(GenAIAttributes.USAGE_OUTPUT_TOKENS.value, response.usage.output_tokens)
+
+            code = _extract_code(response.content or "")
+            if not code.strip():
+                logger.error(
+                    "code_generation_empty",
+                    trace_id=context.trace_id,
+                    raw_response=(response.content or "")[:200],
+                )
+                raise CodeGenerationError("LLM returned empty code")
+
+            gen_span.set_attribute(AgenticAPIAttributes.CODE_LINES.value, code.count("\n") + 1)
+
+            logger.info(
+                "code_generation_complete",
+                trace_id=context.trace_id,
+                code_lines=code.count("\n") + 1,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
             )
-            raise CodeGenerationError("LLM returned empty code")
 
-        logger.info(
-            "code_generation_complete",
-            trace_id=context.trace_id,
-            code_lines=code.count("\n") + 1,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-        )
-
-        return GeneratedCode(
-            code=code,
-            reasoning=response.reasoning,
-            confidence=response.confidence,
-            usage=response.usage,
-        )
+            return GeneratedCode(
+                code=code,
+                reasoning=response.reasoning,
+                confidence=response.confidence,
+                usage=response.usage,
+            )
 
 
 def _extract_code(llm_output: str) -> str:

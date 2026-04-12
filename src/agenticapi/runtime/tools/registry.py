@@ -6,13 +6,15 @@ to agents during code generation and execution.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from agenticapi.exceptions import ToolError
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from agenticapi.runtime.tools.base import Tool, ToolDefinition
 
 logger = structlog.get_logger(__name__)
@@ -31,31 +33,56 @@ class ToolRegistry:
         definitions = registry.get_definitions()
     """
 
-    def __init__(self, tools: list[Tool] | None = None) -> None:
+    def __init__(self, tools: list[Tool | Callable[..., Any]] | None = None) -> None:
         """Initialize the registry with optional initial tools.
 
         Args:
             tools: Optional list of tools to register immediately.
+                Each entry may be either a :class:`Tool` instance or a
+                plain function — plain functions are auto-wrapped via
+                :func:`agenticapi.runtime.tools.tool` so you can mix
+                both styles freely.
         """
         self._tools: dict[str, Tool] = {}
         if tools:
             for tool in tools:
                 self.register(tool)
 
-    def register(self, tool: Tool) -> None:
+    def register(self, tool: Tool | Callable[..., Any]) -> None:
         """Register a tool in the registry.
 
         Args:
-            tool: The tool to register. Must have a unique name.
+            tool: The tool to register. May be either a :class:`Tool`
+                instance or a plain (sync or async) function. Plain
+                functions are automatically wrapped via the
+                :func:`agenticapi.runtime.tools.tool` decorator so the
+                FastAPI-style ``register(my_func)`` shortcut works.
 
         Raises:
             ToolError: If a tool with the same name is already registered.
         """
+        # Auto-wrap plain functions for the FastAPI-style ergonomic
+        # ``registry.register(my_func)`` form. We detect "is this a
+        # Tool already" by checking for the protocol's ``definition``
+        # attribute, which is more reliable than ``isinstance(...)``
+        # against a runtime-checkable Protocol.
+        if not (hasattr(tool, "definition") and hasattr(tool, "invoke")):
+            if not callable(tool):
+                raise ToolError(f"Cannot register non-callable, non-Tool object: {tool!r}")
+            from agenticapi.runtime.tools.decorator import tool as _tool_decorator
+
+            tool = _tool_decorator(tool)
+
+        # By this point ``tool`` definitely satisfies the protocol.
         name = tool.definition.name
         if name in self._tools:
             raise ToolError(f"Tool '{name}' is already registered")
         self._tools[name] = tool
-        logger.info("tool_registered", tool_name=name, capabilities=[c.value for c in tool.definition.capabilities])
+        logger.info(
+            "tool_registered",
+            tool_name=name,
+            capabilities=[c.value for c in tool.definition.capabilities],
+        )
 
     def get(self, name: str) -> Tool:
         """Look up a tool by name.

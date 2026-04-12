@@ -39,7 +39,15 @@ AgenticAPI installs the following core dependencies:
 ```bash
 # MCP support (lightweight optional extra)
 pip install agenticapi[mcp]
+
+# OpenTelemetry tracing (no-op unless installed)
+pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp
+
+# Prometheus metrics via OpenTelemetry
+pip install opentelemetry-api opentelemetry-sdk prometheus-client
 ```
+
+The observability layer is designed to degrade gracefully: `configure_tracing()` and `configure_metrics()` silently no-op if these packages aren't installed. See the [Observability guide](../guides/observability.md) for details.
 
 ## Extensions
 
@@ -50,7 +58,7 @@ Heavyweight integrations are released as separate packages:
 pip install agenticapi-claude-agent-sdk
 ```
 
-See the [Extensions guide](../development/extensions.md) for the full list and how to build your own.
+See the [Extensions guide](../internals/extensions.md) for the full list and how to build your own.
 
 ## Verify Installation
 

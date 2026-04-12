@@ -101,7 +101,88 @@ app.include_router(orders_router)
 app.include_router(products_router)
 ```
 
-## 5. Programmatic Usage
+## 5. Typed Intents with `Intent[T]`
+
+Constrain LLM output to a Pydantic schema by annotating the handler's intent parameter:
+
+```python
+from pydantic import BaseModel
+from agenticapi import AgenticApp, Intent
+
+class OrderSearch(BaseModel):
+    status: str | None = None
+    min_total_usd: float = 0.0
+    limit: int = 20
+
+@app.agent_endpoint(name="orders.search")
+async def search_orders(intent: Intent[OrderSearch], context) -> dict:
+    query = intent.payload          # fully typed, already validated
+    return {"filter": query.model_dump()}
+```
+
+The framework extracts the schema at registration time and validates the resulting payload. `MockBackend` fully exercises provider-side structured output today; the built-in provider backends still need full `response_schema` support. See the [Typed Intents guide](../guides/typed-intents.md).
+
+## 6. Dependency Injection with `Depends()`
+
+Pass resources into handlers via FastAPI-style dependencies:
+
+```python
+from agenticapi import Depends
+
+async def get_db():
+    conn = await connect_db()
+    try:
+        yield conn
+    finally:
+        await conn.close()
+
+@app.agent_endpoint(name="orders.list")
+async def list_orders(intent, context, db=Depends(get_db)):
+    return {"orders": await db.fetch("SELECT * FROM orders")}
+```
+
+Supports generator teardown, caching, nested dependencies, and test overrides. See the [Dependency Injection guide](../guides/dependency-injection.md).
+
+## 7. Tools via `@tool`
+
+Decorate a typed function and register it — schema and capabilities are inferred:
+
+```python
+from agenticapi import tool
+from agenticapi.runtime.tools import ToolRegistry
+
+@tool(description="Look up a product by SKU")
+async def get_product(sku: str) -> dict:
+    return await db.get_product(sku)
+
+registry = ToolRegistry()
+registry.register(get_product)
+```
+
+See the [Tool Decorator guide](../guides/tool-decorator.md).
+
+## 8. Cost Budgeting and Observability
+
+Enforce spend caps and emit OpenTelemetry spans + Prometheus metrics:
+
+```python
+from agenticapi import BudgetPolicy, CodePolicy, HarnessEngine, PricingRegistry
+from agenticapi.observability import configure_tracing, configure_metrics
+
+configure_tracing(service_name="orders")
+configure_metrics(service_name="orders")
+
+budget = BudgetPolicy(
+    pricing=PricingRegistry.default(),
+    max_per_user_per_day_usd=10.00,
+)
+harness = HarnessEngine(policies=[budget, CodePolicy()])
+app = AgenticApp(title="orders", harness=harness)
+```
+
+See the [Cost Budgeting](../guides/cost-budgeting.md) and [Observability](../guides/observability.md) guides for the current explicit-integration pattern.
+
+## 9. Programmatic Usage
 
 You can call the agent pipeline directly without HTTP:
 
@@ -118,9 +199,14 @@ print(response.reasoning)
 
 ## Next Steps
 
-- [Examples](examples.md) — Twelve example apps from hello-world to HTMX
+- [Examples](examples.md) — Twenty example apps from hello-world to streaming release control
 - [Architecture](../guides/architecture.md) — How the layers connect
+- [Typed Intents](../guides/typed-intents.md) — `Intent[T]` with Pydantic validation
+- [Dependency Injection](../guides/dependency-injection.md) — `Depends()` for handlers
+- [Cost Budgeting](../guides/cost-budgeting.md) — `BudgetPolicy` and `PricingRegistry`
+- [Observability](../guides/observability.md) — OpenTelemetry + Prometheus
 - [Authentication](../guides/authentication.md) — API key, Bearer, Basic auth
 - [File Handling](../guides/file-handling.md) — Upload, download, streaming
 - [Harness & Safety](../guides/harness.md) — Policies, sandbox, approval, audit
 - [LLM Backends](../guides/llm-backends.md) — Anthropic, OpenAI, Gemini, custom
+- [Extensions](../internals/extensions.md) — Claude Agent SDK and building your own

@@ -16,6 +16,12 @@
 
 ::: agenticapi.runtime.tools.registry.ToolRegistry
 
+## @tool decorator
+
+FastAPI-style decorator that turns a plain Python function into a registered tool with an auto-generated JSON Schema. See the [Tool Decorator guide](../guides/tool-decorator.md) for usage patterns.
+
+::: agenticapi.runtime.tools.decorator.tool
+
 ## DatabaseTool
 
 ::: agenticapi.runtime.tools.database.DatabaseTool

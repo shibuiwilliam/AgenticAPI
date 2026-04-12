@@ -183,13 +183,28 @@ class HarnessEngine:
             code_lines=generated_code.count("\n") + 1,
         )
 
+        from agenticapi.observability import (
+            AgenticAPIAttributes,
+            SpanNames,
+            get_tracer,
+        )
+
+        tracer = get_tracer()
+
         try:
             # Step 1: Policy evaluation
-            evaluation = self._evaluator.evaluate(
-                code=generated_code,
-                intent_action=intent_action,
-                intent_domain=intent_domain,
-            )
+            with tracer.start_as_current_span(SpanNames.POLICY_EVALUATE.value) as policy_span:
+                evaluation = self._evaluator.evaluate(
+                    code=generated_code,
+                    intent_action=intent_action,
+                    intent_domain=intent_domain,
+                )
+                policy_span.set_attribute(AgenticAPIAttributes.POLICY_ALLOWED.value, evaluation.allowed)
+                if evaluation.violations:
+                    policy_span.set_attribute(
+                        AgenticAPIAttributes.POLICY_VIOLATIONS.value,
+                        "; ".join(evaluation.violations)[:500],
+                    )
             trace.policy_evaluations = [
                 {
                     "policy_name": r.policy_name,
@@ -201,34 +216,36 @@ class HarnessEngine:
             ]
 
             # Step 2: Static analysis
-            denied_modules: list[str] = []
-            for policy in self._evaluator.policies:
-                from agenticapi.harness.policy.code_policy import CodePolicy
+            with tracer.start_as_current_span(SpanNames.STATIC_ANALYSIS.value) as static_span:
+                denied_modules: list[str] = []
+                for policy in self._evaluator.policies:
+                    from agenticapi.harness.policy.code_policy import CodePolicy
 
-                if isinstance(policy, CodePolicy):
-                    denied_modules = policy.denied_modules
-                    break
+                    if isinstance(policy, CodePolicy):
+                        denied_modules = policy.denied_modules
+                        break
 
-            safety_result = check_code_safety(
-                generated_code,
-                denied_modules=denied_modules or None,
-                deny_eval_exec=True,
-                deny_dynamic_import=True,
-            )
-
-            if not safety_result.safe:
-                violation_descriptions = [v.description for v in safety_result.violations if v.severity == "error"]
-                violation_summary = "; ".join(violation_descriptions)
-                logger.warning(
-                    "harness_static_analysis_failed",
-                    trace_id=trace_id,
-                    violations=violation_descriptions,
+                safety_result = check_code_safety(
+                    generated_code,
+                    denied_modules=denied_modules or None,
+                    deny_eval_exec=True,
+                    deny_dynamic_import=True,
                 )
-                raise PolicyViolation(
-                    policy="static_analysis",
-                    violation=violation_summary,
-                    generated_code=generated_code,
-                )
+
+                if not safety_result.safe:
+                    violation_descriptions = [v.description for v in safety_result.violations if v.severity == "error"]
+                    violation_summary = "; ".join(violation_descriptions)
+                    static_span.set_attribute(AgenticAPIAttributes.POLICY_VIOLATIONS.value, violation_summary[:500])
+                    logger.warning(
+                        "harness_static_analysis_failed",
+                        trace_id=trace_id,
+                        violations=violation_descriptions,
+                    )
+                    raise PolicyViolation(
+                        policy="static_analysis",
+                        violation=violation_summary,
+                        generated_code=generated_code,
+                    )
 
             # Step 3: Approval check
             if self._approval is not None:
@@ -238,29 +255,41 @@ class HarnessEngine:
                 )
                 if rule is not None:
                     try:
-                        await self._approval.create_request(
-                            rule=rule,
-                            trace_id=trace_id,
-                            intent_raw=intent_raw,
-                            intent_action=intent_action,
-                            intent_domain=intent_domain,
-                            generated_code=generated_code,
-                        )
+                        with tracer.start_as_current_span(SpanNames.APPROVAL_WAIT.value) as approval_span:
+                            approval_span.set_attribute(AgenticAPIAttributes.APPROVAL_REQUIRED.value, True)
+                            await self._approval.create_request(
+                                rule=rule,
+                                trace_id=trace_id,
+                                intent_raw=intent_raw,
+                                intent_action=intent_action,
+                                intent_domain=intent_domain,
+                                generated_code=generated_code,
+                            )
                     except ApprovalRequired as exc:
                         trace.approval_request_id = exc.request_id
                         raise
 
             # Step 4: Sandbox execution (with pre-fetched data injected)
             sandbox_result: SandboxResult | None = None
-            async with self._sandbox as sandbox:
-                sandbox_result = await sandbox.execute(
-                    code=generated_code,
-                    tools=tools,
-                    resource_limits=ResourceLimits(),
-                    sandbox_data=sandbox_data,
+            with tracer.start_as_current_span(SpanNames.SANDBOX_EXECUTE.value) as sandbox_span:
+                sandbox_span.set_attribute(
+                    AgenticAPIAttributes.SANDBOX_BACKEND.value,
+                    type(self._sandbox).__name__,
+                )
+                sandbox_start = time.monotonic()
+                async with self._sandbox as sandbox:
+                    sandbox_result = await sandbox.execute(
+                        code=generated_code,
+                        tools=tools,
+                        resource_limits=ResourceLimits(),
+                        sandbox_data=sandbox_data,
+                    )
+                sandbox_span.set_attribute(
+                    AgenticAPIAttributes.SANDBOX_DURATION_MS.value,
+                    (time.monotonic() - sandbox_start) * 1000,
                 )
 
-            # Step 6: Post-execution monitors
+            # Step 5: Post-execution monitors
             for monitor in self._monitors:
                 monitor_result = await monitor.on_execution_complete(
                     sandbox_result,
@@ -270,7 +299,7 @@ class HarnessEngine:
                     violation_msg = "; ".join(monitor_result.violations)
                     raise SandboxViolation(f"Monitor violation: {violation_msg}")
 
-            # Step 7: Post-execution validators
+            # Step 6: Post-execution validators
             for validator in self._validators:
                 validation = await validator.validate(
                     sandbox_result,
@@ -299,7 +328,7 @@ class HarnessEngine:
                 sandbox_result=sandbox_result,
             )
 
-        except (PolicyViolation, ApprovalRequired, SandboxViolation, Exception) as exc:
+        except Exception as exc:
             duration_ms = (time.monotonic() - start_time) * 1000
             trace.execution_duration_ms = duration_ms
             trace.error = str(exc)
@@ -308,14 +337,178 @@ class HarnessEngine:
                 "harness_execute_failed",
                 trace_id=trace_id,
                 error=str(exc),
+                error_type=type(exc).__name__,
                 duration_ms=duration_ms,
             )
 
-            # Record the failed trace before re-raising
-            await self._audit_recorder.record(trace)
+            # Record the failed trace before re-raising.  Wrap in
+            # try/except so a recorder failure does not mask the
+            # original exception.
+            try:
+                await self._audit_recorder.record(trace)
+            except Exception:
+                logger.exception("audit_record_failed_on_error_path", trace_id=trace_id)
             raise
 
-        # Step 4: Record audit trace
+        # Step 7: Record audit trace
         await self._audit_recorder.record(trace)
 
         return result
+
+    def evaluate_intent_text(
+        self,
+        *,
+        intent_text: str,
+        intent_action: str = "",
+        intent_domain: str = "",
+    ) -> None:
+        """Run input-scanning policies on raw intent text before the LLM fires.
+
+        Called by the framework at the top of ``_execute_intent`` — the
+        earliest point after the intent string is extracted from the
+        request body and before any LLM call, code generation, or
+        handler execution. This ensures ``PromptInjectionPolicy`` and
+        ``PIIPolicy`` block unsafe input at the LLM boundary.
+
+        Raises :class:`~agenticapi.exceptions.PolicyViolation` if any
+        policy denies the text. On success, returns silently.
+
+        Policies that don't override
+        :meth:`~agenticapi.harness.policy.base.Policy.evaluate_intent_text`
+        default to allow, so adding this call has zero effect on policies
+        like ``CodePolicy`` or ``DataPolicy`` whose domain is generated
+        code, not user text.
+        """
+        self._evaluator.evaluate_intent_text(
+            intent_text=intent_text,
+            intent_action=intent_action,
+            intent_domain=intent_domain,
+        )
+
+    async def call_tool(
+        self,
+        *,
+        tool: Any,
+        arguments: dict[str, Any],
+        intent_raw: str = "",
+        intent_action: str = "",
+        intent_domain: str = "",
+        endpoint_name: str = "",
+        context: AgentContext | None = None,
+    ) -> ExecutionResult:
+        """Invoke a registered tool directly (Phase E4 tool-first path).
+
+        Skips code generation and sandbox execution entirely. The
+        only policy pass that runs is
+        :meth:`PolicyEvaluator.evaluate_tool_call` — AST checks and
+        sandbox safety nets are irrelevant when we're calling a
+        *pre-registered* Python function whose implementation we
+        control. In exchange the caller gets roughly an order of
+        magnitude lower latency and removes a whole class of
+        code-gen failures from the hot path.
+
+        Args:
+            tool: The :class:`~agenticapi.runtime.tools.base.Tool` to
+                invoke. Typically obtained from the app's
+                :class:`ToolRegistry` via the name the LLM emitted.
+            arguments: Keyword arguments for the tool call, usually
+                coming straight from
+                :attr:`agenticapi.runtime.llm.base.ToolCall.arguments`.
+            intent_raw: The original intent string for the audit
+                trace.
+            intent_action: Classified action for policy evaluation
+                (``read``/``write``/etc.).
+            intent_domain: Classified domain.
+            endpoint_name: Endpoint whose request triggered this
+                call, for the audit record.
+            context: Optional :class:`AgentContext` — currently
+                unused by the tool-first path but accepted for
+                symmetry with :meth:`execute`.
+
+        Returns:
+            :class:`ExecutionResult` with the tool's return value,
+            no generated code, and a fully populated audit trace.
+
+        Raises:
+            PolicyViolation: If any policy's
+                :meth:`evaluate_tool_call` hook denies the call.
+            ToolError: If the tool's own invocation fails.
+        """
+        del context
+        trace_id = uuid.uuid4().hex
+        start = time.monotonic()
+        timestamp = datetime.now(tz=UTC)
+        tool_name = tool.definition.name
+
+        trace = ExecutionTrace(
+            trace_id=trace_id,
+            endpoint_name=endpoint_name,
+            timestamp=timestamp,
+            intent_raw=intent_raw,
+            intent_action=intent_action,
+            generated_code=f"# tool-first call: {tool_name}({arguments})",
+        )
+
+        logger.info(
+            "harness_tool_call_start",
+            trace_id=trace_id,
+            tool=tool_name,
+            intent_action=intent_action,
+        )
+
+        try:
+            evaluation = self._evaluator.evaluate_tool_call(
+                tool_name=tool_name,
+                arguments=arguments,
+                intent_action=intent_action,
+                intent_domain=intent_domain,
+            )
+            trace.policy_evaluations = [
+                {
+                    "policy_name": r.policy_name,
+                    "allowed": r.allowed,
+                    "violations": r.violations,
+                    "warnings": r.warnings,
+                }
+                for r in evaluation.results
+            ]
+
+            invocation_start = time.monotonic()
+            output = await tool.invoke(**arguments)
+            tool_duration_ms = (time.monotonic() - invocation_start) * 1000
+            trace.execution_result = output
+            trace.execution_duration_ms = (time.monotonic() - start) * 1000
+
+            logger.info(
+                "harness_tool_call_complete",
+                trace_id=trace_id,
+                tool=tool_name,
+                duration_ms=trace.execution_duration_ms,
+                tool_duration_ms=tool_duration_ms,
+            )
+
+        except PolicyViolation:
+            trace.execution_duration_ms = (time.monotonic() - start) * 1000
+            trace.error = f"Policy denied tool call {tool_name}"
+            await self._audit_recorder.record(trace)
+            raise
+        except Exception as exc:
+            trace.execution_duration_ms = (time.monotonic() - start) * 1000
+            trace.error = f"{type(exc).__name__}: {exc}"
+            logger.error(
+                "harness_tool_call_failed",
+                trace_id=trace_id,
+                tool=tool_name,
+                error=str(exc),
+            )
+            await self._audit_recorder.record(trace)
+            raise
+
+        await self._audit_recorder.record(trace)
+        return ExecutionResult(
+            output=output,
+            generated_code=trace.generated_code,
+            reasoning=None,
+            trace=trace,
+            sandbox_result=None,
+        )

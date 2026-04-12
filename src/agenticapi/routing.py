@@ -8,11 +8,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from agenticapi.dependencies import scan_handler
 from agenticapi.interface.endpoint import AgentEndpointDef
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from pydantic import BaseModel
+
+    from agenticapi.dependencies.depends import Dependency
+    from agenticapi.harness.policy.autonomy_policy import AutonomyPolicy
     from agenticapi.interface.intent import IntentScope
     from agenticapi.security import Authenticator
 
@@ -59,11 +64,15 @@ class AgentRouter:
         description: str = "",
         intent_scope: IntentScope | None = None,
         autonomy_level: str = "supervised",
+        autonomy: AutonomyPolicy | None = None,
         policies: list[Any] | None = None,
         approval: Any | None = None,
         sandbox: Any | None = None,
         enable_mcp: bool = False,
         auth: Authenticator | None = None,
+        response_model: type[BaseModel] | None = None,
+        dependencies: list[Dependency] | None = None,
+        streaming: str | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Register an agent endpoint on this router.
 
@@ -79,6 +88,9 @@ class AgentRouter:
             sandbox: Optional sandbox configuration.
             enable_mcp: Whether to expose this endpoint as an MCP tool.
             auth: Optional Authenticator for this endpoint. Overrides router-level auth.
+            response_model: Optional Pydantic model for handler return validation.
+            dependencies: Optional list of route-level dependencies
+                that run before the handler for side effects only.
 
         Returns:
             A decorator that registers the handler function.
@@ -86,17 +98,23 @@ class AgentRouter:
 
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
             full_name = f"{self._prefix}.{name}" if self._prefix else name
+            effective_autonomy_level = autonomy.start.value if autonomy is not None else autonomy_level
             self._endpoints[full_name] = AgentEndpointDef(
                 name=full_name,
                 handler=func,
                 description=description,
                 intent_scope=intent_scope,
-                autonomy_level=autonomy_level,
+                autonomy_level=effective_autonomy_level,
+                autonomy=autonomy,
                 policies=policies or [],
                 approval=approval,
                 sandbox=sandbox,
                 enable_mcp=enable_mcp,
                 auth=auth or self._auth,
+                response_model=response_model,
+                injection_plan=scan_handler(func),
+                dependencies=list(dependencies or []),
+                streaming=streaming,
             )
             return func
 

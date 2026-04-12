@@ -12,6 +12,15 @@
 
 ::: agenticapi.runtime.llm.base.LLMResponse
 
+`LLMResponse` carries two fields that drive native function calling:
+
+- **`tool_calls: list[ToolCall]`** — structured function-call requests returned by the model. Empty for plain text completions.
+- **`finish_reason: str | None`** — why generation stopped. Typical values: `"stop"`, `"length"`, `"tool_calls"`, `"content_filter"`. `None` for backends that don't report it.
+
+The protocol supports these fields across all backends. In the current implementation, `MockBackend` fully exercises them; the built-in provider adapters are still partial and mostly return text-first responses.
+
+::: agenticapi.runtime.llm.base.ToolCall
+
 ::: agenticapi.runtime.llm.base.LLMUsage
 
 ::: agenticapi.runtime.llm.base.LLMChunk

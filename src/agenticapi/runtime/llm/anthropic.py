@@ -1,7 +1,8 @@
 """Anthropic LLM backend implementation.
 
 Wraps the Anthropic Python SDK to provide an LLMBackend-compatible
-interface for Claude models.
+interface for Claude models.  Supports native function calling
+(``tool_use`` content blocks) and retry with exponential backoff.
 """
 
 from __future__ import annotations
@@ -12,7 +13,8 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from agenticapi.exceptions import CodeGenerationError
-from agenticapi.runtime.llm.base import LLMChunk, LLMPrompt, LLMResponse, LLMUsage
+from agenticapi.runtime.llm.base import LLMChunk, LLMPrompt, LLMResponse, LLMUsage, ToolCall
+from agenticapi.runtime.llm.retry import RetryConfig, with_retry
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -24,7 +26,9 @@ class AnthropicBackend:
     """LLM backend using the Anthropic API (Claude models).
 
     Uses anthropic.AsyncAnthropic for async communication with the
-    Anthropic API. Supports both complete and streaming generation.
+    Anthropic API. Supports both complete and streaming generation,
+    native function calling via ``tool_use`` content blocks, and
+    automatic retry on transient errors.
 
     Example:
         backend = AnthropicBackend(model="claude-sonnet-4-6")
@@ -38,6 +42,7 @@ class AnthropicBackend:
         api_key: str | None = None,
         max_tokens: int = 4096,
         timeout: float = 120.0,
+        retry: RetryConfig | None = None,
     ) -> None:
         """Initialize the Anthropic backend.
 
@@ -46,6 +51,7 @@ class AnthropicBackend:
             api_key: Anthropic API key. Falls back to ANTHROPIC_API_KEY env var.
             max_tokens: Default maximum tokens for generation.
             timeout: API call timeout in seconds.
+            retry: Optional retry configuration for transient failures.
         """
         try:
             import anthropic
@@ -62,6 +68,18 @@ class AnthropicBackend:
         self._max_tokens = max_tokens
         self._timeout = timeout
         self._client = anthropic.AsyncAnthropic(api_key=resolved_key, timeout=timeout)
+
+        if retry is None:
+            self._retry = RetryConfig(
+                max_retries=3,
+                retryable_exceptions=(
+                    anthropic.RateLimitError,
+                    anthropic.APITimeoutError,
+                    anthropic.InternalServerError,
+                ),
+            )
+        else:
+            self._retry = retry
 
     @property
     def model_name(self) -> str:
@@ -82,26 +100,8 @@ class AnthropicBackend:
         """
         try:
             kwargs = self._build_request_kwargs(prompt)
-            message = await self._client.messages.create(**kwargs)
-
-            content = self._extract_content(message)
-            usage = LLMUsage(
-                input_tokens=message.usage.input_tokens,
-                output_tokens=message.usage.output_tokens,
-            )
-
-            logger.info(
-                "anthropic_generate_complete",
-                model=self._model,
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-            )
-
-            return LLMResponse(
-                content=content,
-                usage=usage,
-                model=message.model,
-            )
+            message: Any = await with_retry(self._client.messages.create, self._retry, **kwargs)
+            return self._build_response(message)
 
         except Exception as exc:
             if isinstance(exc, CodeGenerationError):
@@ -160,20 +160,75 @@ class AnthropicBackend:
         if prompt.tools:
             kwargs["tools"] = prompt.tools
 
+        if prompt.tool_choice is not None and prompt.tools:
+            if isinstance(prompt.tool_choice, dict):
+                kwargs["tool_choice"] = prompt.tool_choice
+            elif prompt.tool_choice == "auto":
+                kwargs["tool_choice"] = {"type": "auto"}
+            elif prompt.tool_choice == "required":
+                kwargs["tool_choice"] = {"type": "any"}
+            elif prompt.tool_choice == "none":
+                # Anthropic doesn't have a "none" tool_choice — omit tools.
+                kwargs.pop("tools", None)
+
         return kwargs
 
-    @staticmethod
-    def _extract_content(message: Any) -> str:
-        """Extract text content from an Anthropic message response.
+    def _build_response(self, message: Any) -> LLMResponse:
+        """Build an LLMResponse from an Anthropic message object.
+
+        Extracts text content, tool_use blocks, finish_reason, and
+        usage statistics.
 
         Args:
             message: The Anthropic API message object.
 
         Returns:
-            The concatenated text content from all content blocks.
+            A fully populated LLMResponse.
         """
-        parts: list[str] = []
+        text_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+
         for block in message.content:
             if hasattr(block, "text"):
-                parts.append(block.text)
-        return "".join(parts)
+                text_parts.append(block.text)
+            elif getattr(block, "type", None) == "tool_use":
+                tool_calls.append(
+                    ToolCall(
+                        id=block.id,
+                        name=block.name,
+                        arguments=block.input if isinstance(block.input, dict) else {},
+                    )
+                )
+
+        finish_reason: str | None = None
+        stop_reason = getattr(message, "stop_reason", None)
+        if stop_reason == "tool_use":
+            finish_reason = "tool_calls"
+        elif stop_reason == "end_turn":
+            finish_reason = "stop"
+        elif stop_reason == "max_tokens":
+            finish_reason = "length"
+        elif stop_reason is not None:
+            finish_reason = str(stop_reason)
+
+        usage = LLMUsage(
+            input_tokens=message.usage.input_tokens,
+            output_tokens=message.usage.output_tokens,
+        )
+
+        logger.info(
+            "anthropic_generate_complete",
+            model=self._model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            tool_calls=len(tool_calls),
+            finish_reason=finish_reason,
+        )
+
+        return LLMResponse(
+            content="".join(text_parts),
+            usage=usage,
+            model=message.model,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+        )

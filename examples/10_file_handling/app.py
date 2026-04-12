@@ -11,24 +11,24 @@ Run with:
 
 Test with curl:
     # Upload a file (multipart)
-    curl -X POST http://127.0.0.1:8000/agent/files.upload \\
-        -F 'intent=Analyze this document' \\
+    curl -X POST http://127.0.0.1:8000/agent/files.upload \
+        -F 'intent=Analyze this document' \
         -F 'document=@README.md'
 
     # Download a CSV file
-    curl -X POST http://127.0.0.1:8000/agent/files.export_csv \\
-        -H "Content-Type: application/json" \\
-        -d '{"intent": "Export sales data"}' \\
+    curl -X POST http://127.0.0.1:8000/agent/files.export_csv \
+        -H "Content-Type: application/json" \
+        -d '{"intent": "Export sales data"}' \
         -o export.csv
 
     # Stream a large response
-    curl -X POST http://127.0.0.1:8000/agent/files.stream \\
-        -H "Content-Type: application/json" \\
+    curl -X POST http://127.0.0.1:8000/agent/files.stream \
+        -H "Content-Type: application/json" \
         -d '{"intent": "Stream log data"}'
 
     # Normal JSON endpoint (backward compat)
-    curl -X POST http://127.0.0.1:8000/agent/files.info \\
-        -H "Content-Type: application/json" \\
+    curl -X POST http://127.0.0.1:8000/agent/files.info \
+        -H "Content-Type: application/json" \
         -d '{"intent": "Show file handling capabilities"}'
 
     # Health check

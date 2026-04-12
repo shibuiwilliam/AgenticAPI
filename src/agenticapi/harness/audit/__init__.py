@@ -10,13 +10,21 @@ from agenticapi.harness.audit.exporters import (
     CompositeExporter,
     ConsoleExporter,
 )
-from agenticapi.harness.audit.recorder import AuditRecorder
+from agenticapi.harness.audit.recorder import (
+    AuditRecorder,
+    AuditRecorderProtocol,
+    InMemoryAuditRecorder,
+)
+from agenticapi.harness.audit.sqlite_store import SqliteAuditRecorder
 from agenticapi.harness.audit.trace import ExecutionTrace
 
 __all__ = [
     "AuditExporter",
     "AuditRecorder",
+    "AuditRecorderProtocol",
     "CompositeExporter",
     "ConsoleExporter",
     "ExecutionTrace",
+    "InMemoryAuditRecorder",
+    "SqliteAuditRecorder",
 ]

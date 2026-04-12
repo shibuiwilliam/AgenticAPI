@@ -72,3 +72,72 @@ class Policy(BaseModel):
             PolicyResult indicating whether the code is allowed.
         """
         return PolicyResult(allowed=True, policy_name=self.__class__.__name__)
+
+    def evaluate_intent_text(
+        self,
+        *,
+        intent_text: str,
+        intent_action: str = "",
+        intent_domain: str = "",
+        **kwargs: Any,
+    ) -> PolicyResult:
+        """Evaluate raw user intent text before it reaches the LLM.
+
+        Called by the framework **before** the LLM fires, so policies
+        can block prompt injection, PII, or other unsafe content at
+        the earliest possible point. Policies whose domain is generated
+        code leave the default allow-everything implementation.
+
+        Args:
+            intent_text: The raw natural-language string from the request.
+            intent_action: The classified intent action, if available.
+            intent_domain: The classified intent domain, if available.
+            **kwargs: Additional context for evaluation.
+
+        Returns:
+            :class:`PolicyResult` — default allows every input.
+        """
+        del intent_text, intent_action, intent_domain, kwargs
+        return PolicyResult(allowed=True, policy_name=self.__class__.__name__)
+
+    def evaluate_tool_call(
+        self,
+        *,
+        tool_name: str,
+        arguments: dict[str, Any],
+        intent_action: str = "",
+        intent_domain: str = "",
+        **kwargs: Any,
+    ) -> PolicyResult:
+        """Evaluate a direct tool call against this policy (Phase E4).
+
+        The harness's **tool-first execution path** skips code
+        generation entirely when the LLM returns a structured
+        function call. In that case there's no generated code to run
+        through :meth:`evaluate`; instead, every registered policy is
+        asked whether the *call itself* — identified by the tool's
+        name plus the keyword arguments the model produced — is
+        allowed.
+
+        Subclasses override this hook to enforce constraints at the
+        tool-call boundary. ``CodePolicy`` uses the default
+        allow-everything behaviour (its domain is AST analysis of
+        generated code, not tool arguments). ``DataPolicy`` uses it
+        to block DDL tool names (``drop_*``, ``truncate_*``) and
+        argument values that match restricted tables.
+
+        Args:
+            tool_name: The name of the tool the model wants to call.
+            arguments: The keyword arguments the model produced for
+                the tool. Always a dict.
+            intent_action: The classified intent action. Available
+                for rules that care about read/write/destructive.
+            intent_domain: The classified intent domain.
+            **kwargs: Additional context for evaluation.
+
+        Returns:
+            :class:`PolicyResult` — default implementation allows
+            every tool call. Subclasses narrow as needed.
+        """
+        del tool_name, arguments, intent_action, intent_domain, kwargs
+        return PolicyResult(allowed=True, policy_name=self.__class__.__name__)

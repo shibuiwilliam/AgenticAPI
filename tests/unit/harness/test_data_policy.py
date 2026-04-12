@@ -101,6 +101,38 @@ class TestDataPolicyReadableTables:
         assert len(readable_violations) == 0
 
 
+class TestDataPolicyJoinTables:
+    """Tests for JOIN and subquery table detection."""
+
+    def test_deny_join_to_non_readable_table(self) -> None:
+        policy = DataPolicy(readable_tables=["orders"])
+        code = "db.execute('SELECT * FROM orders JOIN secrets ON orders.id = secrets.order_id')"
+        result = policy.evaluate(code=code)
+        assert result.allowed is False
+        assert any("JOIN" in v and "secrets" in v for v in result.violations)
+
+    def test_allow_join_to_readable_table(self) -> None:
+        policy = DataPolicy(readable_tables=["orders", "products"])
+        code = "db.execute('SELECT * FROM orders JOIN products ON orders.product_id = products.id')"
+        result = policy.evaluate(code=code)
+        join_violations = [v for v in result.violations if "readable" in v.lower() or "JOIN" in v]
+        assert len(join_violations) == 0
+
+    def test_deny_left_join_to_non_readable(self) -> None:
+        policy = DataPolicy(readable_tables=["orders"])
+        code = "db.execute('SELECT * FROM orders LEFT JOIN users ON orders.user_id = users.id')"
+        result = policy.evaluate(code=code)
+        assert result.allowed is False
+        assert any("users" in v for v in result.violations)
+
+    def test_deny_subquery_from_non_readable(self) -> None:
+        policy = DataPolicy(readable_tables=["orders"])
+        code = "db.execute('UPDATE orders SET total = (SELECT max(id) FROM secrets)')"
+        result = policy.evaluate(code=code)
+        assert result.allowed is False
+        assert any("secrets" in v for v in result.violations)
+
+
 class TestDataPolicyResultLimits:
     def test_warn_select_without_limit(self) -> None:
         policy = DataPolicy()

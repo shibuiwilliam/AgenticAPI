@@ -144,6 +144,127 @@ class PolicyEvaluator:
 
         return evaluation
 
+    def evaluate_intent_text(
+        self,
+        *,
+        intent_text: str,
+        intent_action: str = "",
+        intent_domain: str = "",
+        **kwargs: Any,
+    ) -> EvaluationResult:
+        """Evaluate raw intent text against every registered policy.
+
+        Called by the framework **before** the LLM fires. Fans out to
+        each policy's :meth:`~Policy.evaluate_intent_text` hook and
+        aggregates results identically to :meth:`evaluate`. Raises
+        :class:`PolicyViolation` on denial so the request pipeline
+        can abort before the LLM ever sees the text.
+
+        This is the **input-scanning** counterpart to :meth:`evaluate`
+        (post-code-gen) and :meth:`evaluate_tool_call` (tool-first).
+        Policies that don't override the hook default to allow.
+        """
+        results: list[PolicyResult] = []
+        all_violations: list[str] = []
+        all_warnings: list[str] = []
+        overall_allowed = True
+
+        for policy in self._policies:
+            policy_name = type(policy).__name__
+            logger.debug("policy_intent_text_evaluation_start", policy=policy_name)
+            result = policy.evaluate_intent_text(
+                intent_text=intent_text,
+                intent_action=intent_action,
+                intent_domain=intent_domain,
+                **kwargs,
+            )
+            results.append(result)
+            if not result.allowed:
+                overall_allowed = False
+                all_violations.extend(result.violations)
+                logger.warning(
+                    "policy_intent_text_denied",
+                    policy=policy_name,
+                    violations=result.violations,
+                )
+            all_warnings.extend(result.warnings)
+
+        evaluation = EvaluationResult(
+            allowed=overall_allowed,
+            results=results,
+            violations=all_violations,
+            warnings=all_warnings,
+        )
+        if not overall_allowed:
+            violation_summary = "; ".join(all_violations)
+            policy_names = ", ".join(r.policy_name for r in results if not r.allowed)
+            raise PolicyViolation(
+                policy=policy_names,
+                violation=f"Intent text denied: {violation_summary}",
+            )
+        return evaluation
+
+    def evaluate_tool_call(
+        self,
+        *,
+        tool_name: str,
+        arguments: dict[str, Any],
+        intent_action: str = "",
+        intent_domain: str = "",
+        **kwargs: Any,
+    ) -> EvaluationResult:
+        """Evaluate a tool call against every registered policy (Phase E4).
+
+        Mirror of :meth:`evaluate` that fans out to each policy's
+        :meth:`~agenticapi.harness.policy.base.Policy.evaluate_tool_call`
+        hook instead of the code-oriented ``evaluate``. Aggregates
+        results identically and raises :class:`PolicyViolation` on
+        denial so the tool-first execution path in
+        :class:`~agenticapi.harness.engine.HarnessEngine` can share
+        the existing exception flow.
+        """
+        results: list[PolicyResult] = []
+        all_violations: list[str] = []
+        all_warnings: list[str] = []
+        overall_allowed = True
+
+        for policy in self._policies:
+            policy_name = type(policy).__name__
+            logger.debug("policy_tool_call_evaluation_start", policy=policy_name, tool=tool_name)
+            result = policy.evaluate_tool_call(
+                tool_name=tool_name,
+                arguments=arguments,
+                intent_action=intent_action,
+                intent_domain=intent_domain,
+                **kwargs,
+            )
+            results.append(result)
+            if not result.allowed:
+                overall_allowed = False
+                all_violations.extend(result.violations)
+                logger.warning(
+                    "policy_tool_call_denied",
+                    policy=policy_name,
+                    tool=tool_name,
+                    violations=result.violations,
+                )
+            all_warnings.extend(result.warnings)
+
+        evaluation = EvaluationResult(
+            allowed=overall_allowed,
+            results=results,
+            violations=all_violations,
+            warnings=all_warnings,
+        )
+        if not overall_allowed:
+            violation_summary = "; ".join(all_violations)
+            policy_names = ", ".join(r.policy_name for r in results if not r.allowed)
+            raise PolicyViolation(
+                policy=policy_names,
+                violation=f"Tool call {tool_name!r} denied: {violation_summary}",
+            )
+        return evaluation
+
     @property
     def policies(self) -> list[Policy]:
         """Return a copy of the registered policies."""

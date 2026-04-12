@@ -4,7 +4,7 @@ Demonstrates:
 - HtmxHeaders for detecting HTMX requests vs. full-page loads
 - HTMLResult for returning HTML fragments and full pages
 - htmx_response_headers for controlling client-side swap behavior
-- Full page on first load, fragments on HTMX requests
+- A GET / route serving the full HTML page (browser-friendly)
 - Form submission with HTMX (search, add items)
 
 Prerequisites:
@@ -16,13 +16,13 @@ Run with:
 Or using the CLI:
     agenticapi dev --app examples.12_htmx.app:app
 
-Test with curl:
-    # Full HTML page (non-HTMX)
-    curl -X POST http://127.0.0.1:8000/agent/todo.list \
-        -H "Content-Type: application/json" \
-        -d '{"intent": "Show my todo list"}'
+Then open http://127.0.0.1:8000 in your browser.
 
-    # HTMX fragment (partial update)
+Test with curl:
+    # The home page (browser entry point)
+    curl http://127.0.0.1:8000/
+
+    # HTMX fragment via the agent endpoint
     curl -X POST http://127.0.0.1:8000/agent/todo.list \
         -H "Content-Type: application/json" \
         -H "HX-Request: true" \
@@ -49,11 +49,16 @@ from __future__ import annotations
 import html
 from typing import TYPE_CHECKING, Any
 
+from starlette.responses import HTMLResponse
+from starlette.routing import Route
+
 from agenticapi import AgenticApp, HTMLResult, HtmxHeaders, Intent
 from agenticapi.interface.htmx import htmx_response_headers
 from agenticapi.routing import AgentRouter
 
 if TYPE_CHECKING:
+    from starlette.requests import Request
+
     from agenticapi.runtime.context import AgentContext
 
 # ---------------------------------------------------------------------------
@@ -95,7 +100,19 @@ def _render_todo_item(todo: dict[str, Any]) -> str:
     check = "checked" if todo["done"] else ""
     text = html.escape(todo["text"])
     tid = todo["id"]
-    return f'<div class="{cls}" id="todo-{tid}"><label><input type="checkbox" {check} disabled> {text}</label></div>'
+    # Checkbox POSTs to /agent/todo.toggle with the todo id as intent.
+    # hx-swap="outerHTML" replaces the entire item with the updated version.
+    return (
+        f'<div class="{cls}" id="todo-{tid}">'
+        f"<label>"
+        f'<input type="checkbox" {check} name="intent" value="{tid}" '
+        f'hx-post="/agent/todo.toggle" '
+        f'hx-target="#todo-{tid}" '
+        f'hx-swap="outerHTML"> '
+        f"{text}"
+        f"</label>"
+        f"</div>"
+    )
 
 
 def _render_todo_list(todos: list[dict[str, Any]]) -> str:
@@ -117,22 +134,20 @@ def _render_full_page(todos: list[dict[str, Any]]) -> str:
 <body>
   <h1>Todo List <span class="htmx-indicator">Loading...</span></h1>
 
-  <div class="search">
-    <input type="text" name="query" placeholder="Search todos..."
-           hx-post="/agent/todo.search"
-           hx-trigger="keyup changed delay:300ms"
-           hx-target="#todo-list"
-           hx-headers='{{"Content-Type": "application/json"}}'
-           hx-vals='js:JSON.stringify({{intent: event.target.value || "show all"}})' />
-  </div>
+  <form class="search"
+        hx-post="/agent/todo.search"
+        hx-target="#todo-list"
+        hx-trigger="submit, keyup changed delay:300ms from:find input"
+        hx-on::config-request="if (!event.detail.parameters.intent) event.detail.parameters.intent = 'show all'">
+    <input type="text" name="intent" placeholder="Search todos (empty = show all)..." />
+    <button type="submit">Search</button>
+  </form>
 
   <form hx-post="/agent/todo.add"
         hx-target="#todo-list"
         hx-swap="innerHTML"
-        hx-headers='{{"Content-Type": "application/json"}}'
-        hx-vals='js:JSON.stringify({{intent: document.getElementById("new-todo").value}})'
-        hx-on::after-request="document.getElementById('new-todo').value=''">
-    <input type="text" id="new-todo" name="text" placeholder="Add a new todo..." />
+        hx-on::after-request="this.reset()">
+    <input type="text" name="intent" placeholder="Add a new todo..." required />
     <button type="submit">Add</button>
   </form>
 
@@ -195,4 +210,43 @@ async def todo_search(intent: Intent, context: AgentContext, htmx: HtmxHeaders) 
     return HTMLResult(content=_render_todo_list(filtered))
 
 
+@todo_router.agent_endpoint(
+    name="toggle",
+    description="Toggle a todo's done state",
+    autonomy_level="auto",
+)
+async def todo_toggle(intent: Intent, context: AgentContext, htmx: HtmxHeaders) -> HTMLResult:
+    """Toggle the done state of a single todo. intent.raw is the todo ID."""
+    try:
+        todo_id = int(intent.raw.strip())
+    except ValueError:
+        return HTMLResult(content="<div>Invalid todo ID</div>")
+
+    for todo in TODOS:
+        if todo["id"] == todo_id:
+            todo["done"] = not todo["done"]
+            return HTMLResult(content=_render_todo_item(todo))
+
+    return HTMLResult(content=f'<div id="todo-{todo_id}">Not found</div>')
+
+
 app.include_router(todo_router)
+
+
+# ---------------------------------------------------------------------------
+# Browser entry point: GET / serves the full HTML page
+# ---------------------------------------------------------------------------
+#
+# Agent endpoints only respond to POST /agent/{name}, which is correct for
+# the intent-based JSON API. To make this app usable from a web browser,
+# we register a plain Starlette GET / route that returns the full HTML page.
+# Once the page loads, all subsequent interactions are HTMX POSTs to the
+# agent endpoints (todo.list, todo.add, todo.search).
+
+
+async def home(request: Request) -> HTMLResponse:
+    """Serve the full HTML page on GET /. Browser entry point."""
+    return HTMLResponse(content=_render_full_page(TODOS))
+
+
+app.add_routes([Route("/", home, methods=["GET"])])

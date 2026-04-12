@@ -147,6 +147,51 @@ _AGENT_RESPONSE_SCHEMA: dict[str, Any] = {
 }
 
 
+def _wrap_with_response_model(model_schema: dict[str, Any], model_ref: str) -> dict[str, Any]:
+    """Build the AgentResponse-wrapper schema with the model substituted into ``result``."""
+    wrapped = {k: dict(v) if isinstance(v, dict) else v for k, v in _AGENT_RESPONSE_SCHEMA.items()}
+    properties = dict(wrapped.get("properties", {}))
+    properties["result"] = {"$ref": f"#/components/schemas/{model_ref}"}
+    wrapped["properties"] = properties
+    del model_schema  # consumed by the caller via components/schemas
+    return wrapped
+
+
+def _build_typed_request_schema(model_ref: str) -> dict[str, Any]:
+    """Build a per-endpoint request body schema for an ``Intent[T]`` handler (Phase D7).
+
+    The resulting shape is the generic ``AgentRequest`` envelope with
+    the ``parameters`` property replaced by a ``$ref`` to the
+    endpoint-specific Pydantic model. Both shapes (``intent`` + raw
+    string, plus ``parameters`` + typed payload) are accepted so that
+    the existing wire contract keeps working; clients that send just
+    ``intent`` still hit the LLM-driven parser, while clients that
+    already know the schema can post a structured ``parameters``
+    object to skip parsing.
+
+    Args:
+        model_ref: The Pydantic model name to reference under
+            ``#/components/schemas/``. The caller is responsible for
+            registering the model schema itself.
+
+    Returns:
+        An OpenAPI 3.1.0 schema object suitable as a ``requestBody``
+        schema for a single agent endpoint.
+    """
+    base = {k: dict(v) if isinstance(v, dict) else v for k, v in _INTENT_REQUEST_SCHEMA.items()}
+    properties = dict(base.get("properties", {}))
+    properties["parameters"] = {
+        "description": (
+            "Typed intent payload. When omitted, the framework parses ``intent`` "
+            "via the configured LLM backend and validates the result against "
+            f"``{model_ref}``. When provided, it is validated directly and skips parsing."
+        ),
+        "$ref": f"#/components/schemas/{model_ref}",
+    }
+    base["properties"] = properties
+    return base
+
+
 def generate_openapi_schema(
     *,
     title: str,
@@ -157,6 +202,10 @@ def generate_openapi_schema(
     """Generate an OpenAPI 3.1.0 schema from registered agent endpoints.
 
     Each agent endpoint becomes a POST operation at ``/agent/{name}``.
+    When an endpoint declares a ``response_model``, the model's
+    Pydantic-derived schema is registered under
+    ``components/schemas`` and referenced from the operation's
+    successful response, giving FastAPI-grade docs out of the box.
 
     Args:
         title: API title.
@@ -168,10 +217,44 @@ def generate_openapi_schema(
         A complete OpenAPI 3.1.0 schema dict.
     """
     paths: dict[str, Any] = {}
+    components_schemas: dict[str, Any] = {}
 
     for name, endpoint_def in endpoints.items():
         path = f"/agent/{name}"
         tags = _extract_tags(name)
+
+        # If the endpoint declared a response_model, register its
+        # Pydantic schema under components/schemas and substitute it
+        # for the generic ``result`` placeholder in the response shape.
+        success_response_schema: dict[str, Any] = _AGENT_RESPONSE_SCHEMA
+        response_model = endpoint_def.response_model
+        if response_model is not None:
+            try:
+                model_schema = response_model.model_json_schema()
+            except Exception:
+                model_schema = None
+            if model_schema is not None:
+                model_name = response_model.__name__
+                components_schemas[model_name] = model_schema
+                success_response_schema = _wrap_with_response_model(model_schema, model_name)
+
+        # Phase D7: If the handler declared ``Intent[T]`` and the
+        # scanner extracted the payload model, register the model
+        # schema under components/schemas and emit a per-endpoint
+        # ``requestBody`` schema that references it. Untyped
+        # endpoints fall back to the shared generic envelope.
+        request_body_schema: dict[str, Any] = _INTENT_REQUEST_SCHEMA
+        injection_plan = endpoint_def.injection_plan
+        intent_payload_schema = injection_plan.intent_payload_schema if injection_plan is not None else None
+        if intent_payload_schema is not None:
+            try:
+                payload_schema_dict = intent_payload_schema.model_json_schema()
+            except Exception:
+                payload_schema_dict = None
+            if payload_schema_dict is not None:
+                payload_name = intent_payload_schema.__name__
+                components_schemas[payload_name] = payload_schema_dict
+                request_body_schema = _build_typed_request_schema(payload_name)
 
         # Build operation
         operation: dict[str, Any] = {
@@ -182,7 +265,7 @@ def generate_openapi_schema(
                 "required": True,
                 "content": {
                     "application/json": {
-                        "schema": _INTENT_REQUEST_SCHEMA,
+                        "schema": request_body_schema,
                     },
                 },
             },
@@ -191,7 +274,7 @@ def generate_openapi_schema(
                     "description": "Successful agent response.",
                     "content": {
                         "application/json": {
-                            "schema": _AGENT_RESPONSE_SCHEMA,
+                            "schema": success_response_schema,
                         },
                     },
                 },
@@ -200,6 +283,9 @@ def generate_openapi_schema(
                 },
                 "400": {
                     "description": "Bad request — missing or invalid intent.",
+                },
+                "402": {
+                    "description": "Payment Required — cost budget exceeded.",
                 },
                 "403": {
                     "description": "Forbidden — intent scope or policy violation.",
@@ -267,6 +353,8 @@ def generate_openapi_schema(
     }
     if description:
         schema["info"]["description"] = description
+    if components_schemas:
+        schema["components"] = {"schemas": components_schemas}
 
     return schema
 

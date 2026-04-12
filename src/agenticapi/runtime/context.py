@@ -7,7 +7,10 @@ to LLM prompts and tracking agent execution metadata.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from agenticapi.runtime.memory.base import MemoryStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +117,13 @@ class AgentContext:
         user_id: Optional user identifier.
         metadata: Arbitrary key-value metadata.
         context_window: The context window for LLM prompts.
+        memory: Phase C1 — optional :class:`MemoryStore` the
+            framework attaches when the :class:`AgenticApp` was
+            constructed with ``memory=``. Handlers use it to
+            persist user preferences, cached plans, or episodic
+            facts across requests. ``None`` when no memory store
+            is configured — handlers should check before writing
+            or wrap access in a helper.
     """
 
     trace_id: str
@@ -122,6 +132,7 @@ class AgentContext:
     user_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     context_window: ContextWindow = field(default_factory=ContextWindow)
+    memory: MemoryStore | None = None
 
     def add_context(self, key: str, value: str, *, source: str = "agent", priority: int = 0) -> None:
         """Add a context item for use in future LLM prompts.

@@ -1,18 +1,22 @@
 """OpenAI LLM backend implementation.
 
 Wraps the OpenAI Python SDK to provide an LLMBackend-compatible
-interface for GPT models.
+interface for GPT models.  Supports native function calling
+(``tool_calls`` on the assistant message) and retry with exponential
+backoff.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from agenticapi.exceptions import CodeGenerationError
-from agenticapi.runtime.llm.base import LLMChunk, LLMPrompt, LLMResponse, LLMUsage
+from agenticapi.runtime.llm.base import LLMChunk, LLMPrompt, LLMResponse, LLMUsage, ToolCall
+from agenticapi.runtime.llm.retry import RetryConfig, with_retry
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -24,7 +28,8 @@ class OpenAIBackend:
     """LLM backend using the OpenAI API (GPT models).
 
     Uses openai.AsyncOpenAI for async communication with the
-    OpenAI API. Supports both complete and streaming generation.
+    OpenAI API. Supports both complete and streaming generation,
+    native function calling, and automatic retry on transient errors.
 
     Example:
         backend = OpenAIBackend(model="gpt-5.4-mini")
@@ -38,6 +43,7 @@ class OpenAIBackend:
         api_key: str | None = None,
         max_tokens: int = 4096,
         timeout: float = 120.0,
+        retry: RetryConfig | None = None,
     ) -> None:
         """Initialize the OpenAI backend.
 
@@ -46,6 +52,7 @@ class OpenAIBackend:
             api_key: OpenAI API key. Falls back to OPENAI_API_KEY env var.
             max_tokens: Default maximum tokens for generation.
             timeout: API call timeout in seconds.
+            retry: Optional retry configuration for transient failures.
         """
         try:
             import openai
@@ -62,6 +69,17 @@ class OpenAIBackend:
         self._max_tokens = max_tokens
         self._timeout = timeout
         self._client = openai.AsyncOpenAI(api_key=resolved_key, timeout=timeout)
+
+        if retry is None:
+            self._retry = RetryConfig(
+                max_retries=3,
+                retryable_exceptions=(
+                    openai.RateLimitError,
+                    openai.APITimeoutError,
+                ),
+            )
+        else:
+            self._retry = retry
 
     @property
     def model_name(self) -> str:
@@ -82,26 +100,8 @@ class OpenAIBackend:
         """
         try:
             kwargs = self._build_request_kwargs(prompt)
-            completion = await self._client.chat.completions.create(**kwargs)
-
-            content = completion.choices[0].message.content or ""
-            usage = LLMUsage(
-                input_tokens=completion.usage.prompt_tokens if completion.usage else 0,
-                output_tokens=completion.usage.completion_tokens if completion.usage else 0,
-            )
-
-            logger.info(
-                "openai_generate_complete",
-                model=self._model,
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-            )
-
-            return LLMResponse(
-                content=content,
-                usage=usage,
-                model=completion.model or self._model,
-            )
+            completion: Any = await with_retry(self._client.chat.completions.create, self._retry, **kwargs)
+            return self._build_response(completion)
 
         except Exception as exc:
             if isinstance(exc, CodeGenerationError):
@@ -163,4 +163,72 @@ class OpenAIBackend:
         if prompt.tools:
             kwargs["tools"] = prompt.tools
 
+        if prompt.tool_choice is not None and prompt.tools:
+            kwargs["tool_choice"] = prompt.tool_choice
+
         return kwargs
+
+    def _build_response(self, completion: Any) -> LLMResponse:
+        """Build an LLMResponse from an OpenAI completion object.
+
+        Extracts text content, tool_calls, finish_reason, and usage.
+
+        Args:
+            completion: The OpenAI API completion object.
+
+        Returns:
+            A fully populated LLMResponse.
+        """
+        choice = completion.choices[0]
+        content = choice.message.content or ""
+
+        tool_calls: list[ToolCall] = []
+        raw_calls = getattr(choice.message, "tool_calls", None)
+        if raw_calls:
+            for tc in raw_calls:
+                try:
+                    arguments = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                except (json.JSONDecodeError, TypeError):
+                    arguments = {}
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        arguments=arguments,
+                    )
+                )
+
+        finish_reason: str | None = None
+        raw_reason = getattr(choice, "finish_reason", None)
+        if raw_reason == "tool_calls":
+            finish_reason = "tool_calls"
+        elif raw_reason == "stop":
+            finish_reason = "stop"
+        elif raw_reason == "length":
+            finish_reason = "length"
+        elif raw_reason == "content_filter":
+            finish_reason = "content_filter"
+        elif raw_reason is not None:
+            finish_reason = str(raw_reason)
+
+        usage = LLMUsage(
+            input_tokens=completion.usage.prompt_tokens if completion.usage else 0,
+            output_tokens=completion.usage.completion_tokens if completion.usage else 0,
+        )
+
+        logger.info(
+            "openai_generate_complete",
+            model=self._model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            tool_calls=len(tool_calls),
+            finish_reason=finish_reason,
+        )
+
+        return LLMResponse(
+            content=content,
+            usage=usage,
+            model=completion.model or self._model,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+        )

@@ -1,0 +1,79 @@
+# Golden eval set for the eval-harness example.
+#
+# This is the file format ``agenticapi eval --set evals/golden.yaml``
+# and ``load_eval_set()`` consume. Every case specifies an endpoint
+# to hit, an intent to send, and per-case expectations that the
+# judges use to decide pass/fail.
+#
+# Judges listed under ``judges:`` apply to *every* case. Per-case
+# fields (``expected``, ``contains``, ``max_latency_ms``,
+# ``max_cost_usd``) are read by the matching judge; judges that
+# don't need a field ignore it.
+
+name: golden_yaml_suite
+
+judges:
+  - type: exact_match
+  - type: contains
+  - type: latency
+
+cases:
+  # ---- Weather ----
+
+  - id: yaml_weather_tokyo
+    endpoint: weather.forecast
+    intent: "Weather in Tokyo"
+    expected:
+      city: Tokyo
+      temperature_c: 22.5
+      condition: partly cloudy
+      humidity_pct: 65
+    contains:
+      - Tokyo
+      - partly cloudy
+    max_latency_ms: 5000
+
+  - id: yaml_weather_new_york
+    endpoint: weather.forecast
+    intent: "What is the forecast for New York?"
+    expected:
+      city: New York
+      temperature_c: 18.3
+      condition: sunny
+      humidity_pct: 52
+    contains:
+      - New York
+      - sunny
+    max_latency_ms: 5000
+
+  # ---- Calculator ----
+
+  - id: yaml_calc_subtract
+    endpoint: calc.compute
+    intent: "10 - 4"
+    expected:
+      expression: "10.0 - 4.0"
+      result: 6.0
+    max_latency_ms: 5000
+
+  - id: yaml_calc_divide
+    endpoint: calc.compute
+    intent: "100 / 4"
+    expected:
+      expression: "100.0 / 4.0"
+      result: 25.0
+    max_latency_ms: 5000
+
+  # ---- Inventory ----
+
+  - id: yaml_inventory_gadget
+    endpoint: inventory.check
+    intent: "Check stock for gadget-x"
+    expected:
+      sku: gadget-x
+      name: Gadget X
+      in_stock: true
+      quantity: 7
+    contains:
+      - Gadget X
+    max_latency_ms: 5000

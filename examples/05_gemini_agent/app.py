@@ -39,6 +39,7 @@ Test with curl:
 from __future__ import annotations
 
 import json as _json
+import os
 from typing import TYPE_CHECKING, Any
 
 from agenticapi.app import AgenticApp
@@ -219,8 +220,15 @@ harness = HarnessEngine(
 # ---------------------------------------------------------------------------
 # LLM backend — Google Gemini
 # ---------------------------------------------------------------------------
+#
+# The backend is created lazily so the example can be imported and
+# served (``/health``, ``/docs``, ``/openapi.json``, and the
+# deterministic search / metrics endpoints) without ``GOOGLE_API_KEY``
+# set. The two custom-prompt endpoints (``analyze``,
+# ``draft_response``) return a structured friendly error when the key
+# is missing rather than crashing the handler.
 
-llm = GeminiBackend(model="gemini-2.5-flash")
+llm: GeminiBackend | None = GeminiBackend(model="gemini-2.5-flash") if os.environ.get("GOOGLE_API_KEY") else None
 
 # ---------------------------------------------------------------------------
 # Routers and endpoints
@@ -317,6 +325,17 @@ async def ticket_metrics(intent: Intent, context: AgentContext) -> AgentResponse
 )
 async def ticket_analyze(intent: Intent, context: AgentContext) -> dict[str, Any]:
     """Call Gemini with a custom prompt for ticket pattern analysis."""
+    if llm is None:
+        return {
+            "error": "GOOGLE_API_KEY not set",
+            "detail": (
+                "This endpoint calls Gemini directly with a custom prompt. Set "
+                "GOOGLE_API_KEY in the environment and restart the server to "
+                "enable it. The deterministic search / metrics endpoints run "
+                "without credentials."
+            ),
+        }
+
     ticket_data = _json.dumps(TICKETS, indent=2)
     prompt = LLMPrompt(
         system=(
@@ -343,6 +362,17 @@ async def ticket_analyze(intent: Intent, context: AgentContext) -> dict[str, Any
 )
 async def ticket_draft_response(intent: Intent, context: AgentContext) -> dict[str, Any]:
     """Call Gemini with a custom prompt to draft a customer-facing reply."""
+    if llm is None:
+        return {
+            "error": "GOOGLE_API_KEY not set",
+            "detail": (
+                "This endpoint calls Gemini directly with a custom prompt. Set "
+                "GOOGLE_API_KEY in the environment and restart the server to "
+                "enable it. The deterministic search / metrics endpoints run "
+                "without credentials."
+            ),
+        }
+
     ticket_data = _json.dumps(TICKETS, indent=2)
     prompt = LLMPrompt(
         system=(

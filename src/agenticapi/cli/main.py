@@ -42,6 +42,58 @@ def cli() -> None:
         help="App import path (e.g. myapp:app)",
     )
 
+    # replay command (Phase A6): re-run a historical audit trace
+    # through the current pipeline and print a JSON diff.
+    replay_parser = subparsers.add_parser(
+        "replay",
+        help="Replay a historical audit trace through the current pipeline",
+    )
+    replay_parser.add_argument(
+        "trace_id",
+        help="Trace id to replay (must exist in the app's audit store)",
+    )
+    replay_parser.add_argument(
+        "--app",
+        required=True,
+        help="App import path (e.g. myapp:app)",
+    )
+
+    # eval command (Phase C6): run a YAML eval set against the app
+    # and emit a pass/fail report. Exit code is 0/1/2 so CI can
+    # treat a regression as a build failure.
+    eval_parser = subparsers.add_parser(
+        "eval",
+        help="Run an eval set against a live app (regression gate)",
+    )
+    eval_parser.add_argument(
+        "--set",
+        dest="eval_set",
+        required=True,
+        help="Path to the eval set YAML file",
+    )
+    eval_parser.add_argument(
+        "--app",
+        required=True,
+        help="App import path (e.g. myapp:app)",
+    )
+    eval_parser.add_argument(
+        "--format",
+        dest="fmt",
+        default="text",
+        choices=["text", "json"],
+        help="Report output format (default: text)",
+    )
+
+    # init command — project scaffolding
+    init_parser = subparsers.add_parser("init", help="Generate a new AgenticAPI project")
+    init_parser.add_argument("project_name", help="Name of the project to create")
+    init_parser.add_argument(
+        "--template",
+        default="default",
+        choices=["default", "chat", "tool-calling"],
+        help="Project template (default: default)",
+    )
+
     # version command
     subparsers.add_parser("version", help="Show version")
 
@@ -60,6 +112,24 @@ def cli() -> None:
         from agenticapi.cli.console import run_console
 
         run_console(app_path=args.app)
+    elif args.command == "replay":
+        from agenticapi.cli.replay import run_replay_cli
+
+        sys.exit(run_replay_cli(trace_id=args.trace_id, app_path=args.app))
+    elif args.command == "eval":
+        from agenticapi.cli.eval import run_eval_cli
+
+        sys.exit(
+            run_eval_cli(
+                eval_set_path=args.eval_set,
+                app_path=args.app,
+                fmt=args.fmt,
+            )
+        )
+    elif args.command == "init":
+        from agenticapi.cli.init import run_init
+
+        run_init(project_name=args.project_name, template=args.template)
     elif args.command == "version":
         from agenticapi import __version__
 

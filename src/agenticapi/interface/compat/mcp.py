@@ -68,11 +68,17 @@ class MCPCompat:
     def build_server(self) -> Any:
         """Build the FastMCP server with tools for all MCP-enabled endpoints.
 
+        The server is configured with ``streamable_http_path="/"`` so that
+        when its ASGI app is mounted at a path (e.g. ``/mcp``), the protocol
+        endpoint is reachable at that exact path — not at ``<mount>/mcp``.
+
         Returns:
             A configured FastMCP server instance.
         """
         assert _FastMCP is not None
-        mcp = _FastMCP(self._name)
+        # streamable_http_path="/" makes the inner app serve at root, so
+        # mounting at "/mcp" gives the user the URL they expect: /mcp.
+        mcp = _FastMCP(self._name, streamable_http_path="/")
 
         mcp_endpoints = {name: ep for name, ep in self._app._endpoints.items() if ep.enable_mcp}
 
@@ -172,5 +178,11 @@ def expose_as_mcp(app: AgenticApp, *, path: str = "/mcp") -> None:
 
     mount = Mount(path, app=mcp_asgi_app)
     app.add_routes([mount])
+
+    # Starlette doesn't propagate lifespan events to mounted sub-apps, so we
+    # must register FastMCP's lifespan explicitly. Without this, the
+    # StreamableHTTPSessionManager is never started and every request fails
+    # with "Task group is not initialized".
+    app.add_lifespan(lambda: mcp_asgi_app.router.lifespan_context(mcp_asgi_app))
 
     logger.info("mcp_server_mounted", path=path)

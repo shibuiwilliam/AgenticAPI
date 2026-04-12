@@ -38,6 +38,7 @@ Test with curl:
 from __future__ import annotations
 
 import json as _json
+import os
 from typing import TYPE_CHECKING, Any
 
 from agenticapi.app import AgenticApp
@@ -136,8 +137,17 @@ harness = HarnessEngine(
 # ---------------------------------------------------------------------------
 # LLM backend — Anthropic Claude
 # ---------------------------------------------------------------------------
+#
+# The backend is created lazily so the example can be imported and
+# served (``/health``, ``/docs``, ``/openapi.json``, and the deterministic
+# search / inventory endpoints) without ``ANTHROPIC_API_KEY`` set. The
+# two custom-prompt endpoints (``describe``, ``recommend``) return a
+# structured friendly error when the key is missing rather than
+# crashing the handler.
 
-llm = AnthropicBackend(model="claude-sonnet-4-20250514")
+llm: AnthropicBackend | None = (
+    AnthropicBackend(model="claude-sonnet-4-20250514") if os.environ.get("ANTHROPIC_API_KEY") else None
+)
 
 # ---------------------------------------------------------------------------
 # Routers and endpoints
@@ -220,6 +230,17 @@ async def product_inventory(intent: Intent, context: AgentContext) -> AgentRespo
 )
 async def product_describe(intent: Intent, context: AgentContext) -> dict[str, Any]:
     """Call Claude with a custom prompt to generate a product description."""
+    if llm is None:
+        return {
+            "error": "ANTHROPIC_API_KEY not set",
+            "detail": (
+                "This endpoint calls Claude directly with a custom prompt. Set "
+                "ANTHROPIC_API_KEY in the environment and restart the server to "
+                "enable it. The deterministic search / inventory endpoints run "
+                "without credentials."
+            ),
+        }
+
     catalog = _json.dumps(PRODUCTS, indent=2)
     prompt = LLMPrompt(
         system=(
@@ -246,6 +267,17 @@ async def product_describe(intent: Intent, context: AgentContext) -> dict[str, A
 )
 async def product_recommend(intent: Intent, context: AgentContext) -> dict[str, Any]:
     """Call Claude with a custom prompt to recommend products."""
+    if llm is None:
+        return {
+            "error": "ANTHROPIC_API_KEY not set",
+            "detail": (
+                "This endpoint calls Claude directly with a custom prompt. Set "
+                "ANTHROPIC_API_KEY in the environment and restart the server to "
+                "enable it. The deterministic search / inventory endpoints run "
+                "without credentials."
+            ),
+        }
+
     catalog = _json.dumps(PRODUCTS, indent=2)
     prompt = LLMPrompt(
         system=(

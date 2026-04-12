@@ -54,6 +54,15 @@ target-version = "py313"
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "TCH", "RUF"]
 ignore = ["N818"]  # Exception names like PolicyViolation are intentional per spec
 
+[tool.ruff.lint.flake8-bugbear]
+# Allow Depends() in function defaults — this is the canonical FastAPI/AgenticAPI pattern
+# and the framework's scanner specifically looks for it as a default value.
+extend-immutable-calls = [
+    "agenticapi.Depends",
+    "agenticapi.dependencies.Depends",
+    "agenticapi.dependencies.depends.Depends",
+]
+
 [tool.ruff.lint.isort]
 known-first-party = ["agenticapi"]
 

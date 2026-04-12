@@ -34,6 +34,13 @@ class ExecutionTrace:
         execution_duration_ms: Total execution duration in milliseconds.
         error: Error message if the execution failed.
         llm_usage: Token usage statistics from LLM calls.
+        approval_request_id: ID of an associated approval request, if any.
+        stream_events: Phase F8 — list of typed agent lifecycle events
+            emitted on this request's :class:`AgentStream`. Empty for
+            non-streaming endpoints. Each entry is the
+            ``model_dump()`` of an
+            :class:`agenticapi.interface.stream.AgentEvent` so it
+            JSON-serialises cleanly into the audit store.
     """
 
     trace_id: str
@@ -49,3 +56,4 @@ class ExecutionTrace:
     error: str | None = None
     llm_usage: dict[str, int] | None = None
     approval_request_id: str | None = None
+    stream_events: list[dict[str, Any]] = field(default_factory=list)

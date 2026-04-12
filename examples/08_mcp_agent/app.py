@@ -8,28 +8,47 @@ Demonstrates:
 - All endpoints remain accessible via the native intent API
 
 Prerequisites:
-    pip install agenticapi[mcp]
+    pip install 'agenticapi[mcp]'
 
 Run with:
     uvicorn examples.08_mcp_agent.app:app --reload
 
 Test native API:
-    curl -X POST http://127.0.0.1:8000/agent/tasks.query \\
-        -H "Content-Type: application/json" \\
+    curl -X POST http://127.0.0.1:8000/agent/tasks.query \
+        -H "Content-Type: application/json" \
         -d '{"intent": "Show all high-priority tasks"}'
 
-    curl -X POST http://127.0.0.1:8000/agent/tasks.analytics \\
-        -H "Content-Type: application/json" \\
+    curl -X POST http://127.0.0.1:8000/agent/tasks.analytics \
+        -H "Content-Type: application/json" \
         -d '{"intent": "What is the completion rate?"}'
 
-    curl -X POST http://127.0.0.1:8000/agent/tasks.admin \\
-        -H "Content-Type: application/json" \\
+    curl -X POST http://127.0.0.1:8000/agent/tasks.admin \
+        -H "Content-Type: application/json" \
         -d '{"intent": "Reset all task statuses"}'
 
     curl http://127.0.0.1:8000/health
 
-Test MCP with the MCP Inspector:
-    npx @modelcontextprotocol/inspector http://127.0.0.1:8000/mcp
+Test MCP with the MCP Inspector — IMPORTANT: you must explicitly select the
+HTTP transport. Just passing the URL defaults to STDIO and fails with
+``spawn http://... ENOENT``.
+
+    # CLI mode — list tools
+    npx @modelcontextprotocol/inspector --cli \\
+        http://127.0.0.1:8000/mcp \\
+        --transport http \\
+        --method tools/list
+
+    # CLI mode — invoke a tool
+    npx @modelcontextprotocol/inspector --cli \\
+        http://127.0.0.1:8000/mcp \\
+        --transport http \\
+        --method tools/call \\
+        --tool-name tasks.query \\
+        --tool-arg intent="show high-priority tasks"
+
+    # UI mode — opens a browser, then choose Transport=Streamable HTTP and
+    # paste http://127.0.0.1:8000/mcp into the URL field
+    npx @modelcontextprotocol/inspector
 
 The MCP inspector will show two tools (tasks.query and tasks.analytics)
 but NOT tasks.admin, which has enable_mcp=False (the default).

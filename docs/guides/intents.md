@@ -12,6 +12,7 @@ Every parsed intent contains:
 | `action` | `IntentAction` | Classified action (READ, WRITE, ANALYZE, EXECUTE, CLARIFY) |
 | `domain` | `str` | Business domain (e.g., "order", "product", "user") |
 | `parameters` | `dict[str, Any]` | Extracted key-value parameters |
+| `payload` | `T \| None` | Pydantic-validated payload when the handler annotates `Intent[T]` |
 | `confidence` | `float` | Parse confidence (0.0-1.0) |
 | `ambiguities` | `list[str]` | Detected ambiguities |
 | `session_context` | `dict[str, Any]` | Accumulated session context |
@@ -24,6 +25,26 @@ intent.domain       # "order"
 intent.is_write     # True if WRITE or EXECUTE
 intent.needs_clarification  # True if CLARIFY or ambiguities present
 ```
+
+### Typed intents
+
+`Intent` is generic. Annotate a handler parameter as `Intent[MyModel]` and the parser
+will constrain the LLM output to your Pydantic schema and populate `intent.payload`:
+
+```python
+from pydantic import BaseModel
+from agenticapi import Intent
+
+class OrderSearch(BaseModel):
+    status: str | None = None
+    limit: int = 20
+
+async def handler(intent: Intent[OrderSearch], context) -> dict:
+    query: OrderSearch = intent.payload    # already validated
+    ...
+```
+
+See the [Typed Intents guide](typed-intents.md) for details and best practices.
 
 ## IntentParser
 

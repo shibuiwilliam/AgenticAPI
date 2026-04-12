@@ -273,8 +273,8 @@ These are defense in depth, **not** kernel-level isolation. See the extension's 
 
 **Related docs:**
 
-- [claude_agent_sdk_extension_plan.md](claude_agent_sdk_extension_plan.md) — Design rationale and API surface
-- [../extensions/agenticapi-claude-agent-sdk/README.md](../extensions/agenticapi-claude-agent-sdk/README.md) — User-facing quickstart
+- [claude-agent-sdk-extension-plan.md](claude-agent-sdk-extension-plan.md) — Design rationale and API surface
+- `extensions/agenticapi-claude-agent-sdk/README.md` (at repo root) — User-facing quickstart
 
 ---
 
@@ -307,5 +307,5 @@ The root `.github/workflows/ci.yml` does not yet run extension tests automatical
 7. [ ] `tests/conftest.py` stubbing the wrapped library for offline tests
 8. [ ] `README.md` with quickstart, public API table, safety notes
 9. [ ] `examples/` with runnable scripts
-10. [ ] Reference in `development/extensions.md` under "Reference Extensions"
-11. [ ] Note in root [CLAUDE.md](../CLAUDE.md) Extensions table
+10. [ ] Reference in `extensions.md` under "Reference Extensions"
+11. [ ] Note in root `CLAUDE.md` (at repo root) Extensions table
