@@ -46,7 +46,7 @@ uvicorn myapp:app --reload
 - **Approval workflows** — Human-in-the-loop for sensitive operations
 - **ASGI-native** — Built on Starlette, runs on uvicorn
 
-**Current scale:** 118 Python modules, ~21,944 lines of code, **1,304 tests** (+38 in extensions), 27 examples, 1 extension.
+**Current scale:** 118 Python modules, ~21,944 lines of code, **1,310 tests** (+38 in extensions), 27 examples, 1 extension.
 
 For the full shipped / active / deferred / superseded status matrix see `ROADMAP.md` at the repo root. For speculative forward tracks (Agent Mesh, Hardened Trust, Self-Improving Flywheel) see `VISION.md` at the repo root.
 
@@ -56,7 +56,7 @@ For the full shipped / active / deferred / superseded status matrix see `ROADMAP
 
 - [Installation](getting-started/installation.md)
 - [Quick Start](getting-started/quickstart.md)
-- [Examples](getting-started/examples.md) — 23 runnable apps from hello-world to eval harness
+- [Examples](getting-started/examples.md) — 27 runnable apps from hello-world to multi-agent pipelines
 
 **Core guides**
 

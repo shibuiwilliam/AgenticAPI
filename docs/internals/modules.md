@@ -6,7 +6,7 @@ The package ships a `py.typed` marker (PEP 561) so downstream mypy users pick up
 
 ```
 src/agenticapi/
-    __init__.py              Public API exports (75 symbols) — see Public API below
+    __init__.py              Public API exports (73 symbols) — see Public API below
     py.typed                 PEP 561 type info marker
     app.py                   AgenticApp — main ASGI application
     routing.py               AgentRouter — endpoint grouping, route-level dependencies

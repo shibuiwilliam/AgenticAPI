@@ -42,7 +42,7 @@ uv run pytest                                    # All 1,206 tests (unit + integ
 uv run pytest --ignore=tests/benchmarks -q       # Skip benchmarks (faster)
 uv run pytest tests/unit/harness/ -xvs           # Specific directory
 uv run pytest --cov=src/agenticapi               # With coverage
-uv run pytest tests/e2e/ -v                      # E2E tests for all 23 example apps
+uv run pytest tests/e2e/ -v                      # E2E tests for all 27 example apps
 uv run pytest tests/benchmarks/                  # Benchmarks only
 uv run pytest -m "not requires_llm"              # Skip LLM-dependent tests
 ```
@@ -639,9 +639,8 @@ Extensions live under `extensions/<package-name>/` with their own `pyproject.tom
 Three forward tracks are defined in [`VISION.md`](VISION.md). This
 section provides the implementation-level guidance a Claude Code session
 needs to execute them. For the strategic rationale see
-[`PROJECT.md`](PROJECT.md) > Strategic Forward Tracks. For the full
-task-level specs (file manifests, protocols, test checklists) see the
-archived originals in `development/archive/`.
+[`PROJECT.md`](PROJECT.md) > Strategic Forward Tracks. Full task-level
+specs live in [`VISION.md`](VISION.md).
 
 ### Track summaries
 

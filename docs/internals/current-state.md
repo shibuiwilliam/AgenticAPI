@@ -89,6 +89,7 @@ These areas are implemented end-to-end in the current tree and are safe places t
 - Extension packaging model, especially `extensions/agenticapi-claude-agent-sdk`
 - PromptInjectionPolicy (B5): 10 regex rules, 5 categories, shadow mode, custom patterns
 - PIIPolicy (B6): 6 detectors, Luhn-validated credit cards, detect/redact/block modes, `redact_pii()` utility
+- Pre-LLM text policy invocation (Increment 9): `evaluate_intent_text()` hook fires before any LLM call or handler execution, automatically scans intent text through all policies that override the hook
 - Agent memory (C1): `MemoryStore` protocol, `InMemoryMemoryStore`, `SqliteMemoryStore`, scope-based isolation, GDPR forget
 - Code cache (C5): deterministic code reuse for repeated intents
 - Eval harness (C6): `EvalSet`, `EvalCase`, `EvalRunner`, 5 built-in judges, YAML loading, `agenticapi eval` CLI
@@ -225,7 +226,7 @@ If you need to understand the implementation quickly, read in this order:
 ## Scale (Increment 9)
 
 - **118 Python modules**, ~21,944 lines of code
-- **1,304 tests** (+38 in extensions), 27 examples, 75 `__all__` exports
+- **1,310 tests** (+38 in extensions), 27 examples, 73 `__all__` exports
 - Phase A (control plane): complete
 - Phase D (DX core): complete (Depends, Intent[T], response_model, @tool, route deps)
 - Phase E (native function calling): core shipped
