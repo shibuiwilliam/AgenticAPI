@@ -1,6 +1,6 @@
 [project]
 name = "agentharnessapi"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Agent-native web framework with harness engineering for Python"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -62,8 +62,18 @@ Changelog = "https://github.com/shibuiwilliam/AgenticAPI/blob/main/IMPLEMENTATIO
 agenticapi = "agenticapi.cli.main:cli"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+# Strip +local metadata so PyPI accepts untagged builds.
+# Tagged commits (v0.2.0) get clean versions (0.2.0).
+# Untagged commits get dev versions (0.2.0.dev3).
+raw-options.local_scheme = "no-local-version"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/agenticapi/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agenticapi"]

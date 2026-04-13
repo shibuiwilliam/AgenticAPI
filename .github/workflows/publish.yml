@@ -51,6 +51,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # full history needed for hatch-vcs version
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -74,6 +76,8 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
 
   # -- Publish to GitHub Packages (GitHub Release) --------------------
   #

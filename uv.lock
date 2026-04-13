@@ -4,7 +4,6 @@ requires-python = ">=3.13"
 
 [[package]]
 name = "agentharnessapi"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
@@ -55,7 +54,7 @@ requires-dist = [
     { name = "starlette", specifier = ">=1.0.0" },
     { name = "structlog", specifier = ">=25.5.0" },
 ]
-provides-extras = ["mcp", "claude-agent-sdk"]
+provides-extras = ["claude-agent-sdk", "mcp"]
 
 [package.metadata.requires-dev]
 dev = [

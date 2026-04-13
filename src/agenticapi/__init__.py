@@ -80,7 +80,10 @@ from agenticapi.security import (
 )
 from agenticapi.types import AutonomyLevel, Severity, TraceLevel
 
-__version__ = "0.1.0"
+try:
+    from agenticapi._version import __version__
+except ModuleNotFoundError:  # editable install without build
+    __version__ = "0.0.0.dev0"
 
 __all__ = [
     "APIKeyHeader",
