@@ -34,8 +34,8 @@ jobs:
         with:
           python-version: "3.13"
       - run: uv sync --group dev
-      - run: uv run ruff format --check src/ tests/
-      - run: uv run ruff check src/ tests/
+      - run: uv run ruff format --check src/ tests/ examples/
+      - run: uv run ruff check src/ tests/ examples/
 
   typecheck:
     runs-on: ubuntu-latest

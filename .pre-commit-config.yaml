@@ -2,11 +2,22 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.9
     hooks:
+      # Format in-place (no --check) so you can re-stage and commit.
+      # Matches: ci.yml  `ruff format --check src/ tests/ examples/`
+      # Matches: publish.yml `ruff format --check src/ tests/ examples/`
       - id: ruff-format
-        args: [--check, src/, tests/, examples/]
+        args: [src/, tests/, examples/]
+        pass_filenames: false
+      # Lint with auto-fix; fail if fixes were applied so you re-stage.
+      # Matches: ci.yml  `ruff check src/ tests/ examples/`
+      # Matches: publish.yml `ruff check src/ tests/ examples/`
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix, src/, tests/, examples/]
+        pass_filenames: false
 
+  # Type-check the source package.
+  # Matches: ci.yml  `mypy src/agenticapi/`
+  # Matches: publish.yml `mypy src/agenticapi/`
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.20.0
     hooks:
@@ -24,3 +35,4 @@ repos:
           - python-multipart>=0.0.20
           - uvicorn>=0.34.0
           - mcp>=1.27.0
+          - claude-agent-sdk>=0.1.58

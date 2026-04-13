@@ -99,14 +99,12 @@ jobs:
         with:
           name: dist
           path: dist/
-      - name: Extract version from pyproject.toml
+      - name: Extract version from built wheel filename
         id: version
         run: |
-          version=$(python3 -c "
-          import tomllib, pathlib
-          data = tomllib.loads(pathlib.Path('pyproject.toml').read_text())
-          print(data['project']['version'])
-          ")
+          # Wheel filename format: {name}-{version}-{python}-{abi}-{platform}.whl
+          whl=$(ls dist/*.whl | head -1)
+          version=$(basename "$whl" | sed 's/^agentharnessapi-//; s/-.*//')
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
       - name: Create or update GitHub Release
