@@ -121,6 +121,10 @@ ignore_missing_imports = true
 module = "agenticapi.ext.claude_agent_sdk.*"
 warn_unused_ignores = false
 
+[[tool.mypy.overrides]]
+module = "agenticapi.mcp_tools.*"
+warn_unused_ignores = false
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
