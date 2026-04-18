@@ -71,6 +71,9 @@ source = "vcs"
 # Tagged commits (v0.2.0) get clean versions (0.2.0).
 # Untagged commits get dev versions (0.2.0.dev3).
 raw-options.local_scheme = "no-local-version"
+# Fallback when setuptools-scm cannot derive a version from git
+# (e.g. shallow clones without tags, tarball installs).
+fallback-version = "0.0.0.dev0"
 
 [tool.hatch.build.hooks.vcs]
 version-file = "src/agenticapi/_version.py"
