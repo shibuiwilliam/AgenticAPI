@@ -30,10 +30,11 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 # Guard the optional dependency.
+_FastMCP: type | None
 try:
     from mcp.server.fastmcp import FastMCP as _FastMCP
 except ImportError:
-    _FastMCP = None  # type: ignore[assignment, misc]
+    _FastMCP = None
 
 
 class HarnessMCPServer:
