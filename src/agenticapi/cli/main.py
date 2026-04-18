@@ -94,6 +94,17 @@ def cli() -> None:
         help="Project template (default: default)",
     )
 
+    # bump command — semantic version bumping
+    bump_parser = subparsers.add_parser("bump", help="Bump semantic version via git tags")
+    bump_parser.add_argument(
+        "part",
+        choices=["major", "minor", "patch", "prerelease", "current"],
+        help="Version part to bump, or 'current' to display",
+    )
+    bump_parser.add_argument("--dry-run", action="store_true", help="Preview without creating a tag")
+    bump_parser.add_argument("--pre-prefix", default="rc", help="Prerelease prefix (default: rc)")
+    bump_parser.add_argument("--initial", default="0.1.0", help="Initial version if no tags exist")
+
     # version command
     subparsers.add_parser("version", help="Show version")
 
@@ -130,6 +141,17 @@ def cli() -> None:
         from agenticapi.cli.init import run_init
 
         run_init(project_name=args.project_name, template=args.template)
+    elif args.command == "bump":
+        from agenticapi.cli.bump import run_bump
+
+        sys.exit(
+            run_bump(
+                args.part,
+                dry_run=args.dry_run,
+                pre_prefix=args.pre_prefix,
+                initial=args.initial,
+            )
+        )
     elif args.command == "version":
         from agenticapi import __version__
 

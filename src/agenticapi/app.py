@@ -57,6 +57,7 @@ if TYPE_CHECKING:
     from agenticapi.runtime.code_cache import CodeCache
     from agenticapi.runtime.code_generator import CodeGenerator
     from agenticapi.runtime.llm.base import LLMBackend
+    from agenticapi.runtime.loop import LoopConfig
     from agenticapi.runtime.memory.base import MemoryStore
     from agenticapi.runtime.tools.registry import ToolRegistry
     from agenticapi.security import Authenticator, AuthUser
@@ -98,6 +99,8 @@ class AgenticApp:
         redoc_url: str | None = "/redoc",
         openapi_url: str | None = "/openapi.json",
         metrics_url: str | None = None,
+        playground_url: str | None = None,
+        trace_url: str | None = None,
     ) -> None:
         """Initialize the application.
 
@@ -190,6 +193,22 @@ class AgenticApp:
         # via the public setter below.
         self._stream_store: Any = InMemoryStreamStore()
 
+        # Playground: self-hosted agent debugger UI.
+        self._playground_routes: list[BaseRoute] = []
+        self._playground_url = playground_url
+        if playground_url is not None:
+            from agenticapi.playground import mount_playground
+
+            mount_playground(self, playground_url)
+
+        # Trace inspector: self-hosted trace inspection UI.
+        self._trace_inspector_routes: list[BaseRoute] = []
+        self._trace_url = trace_url
+        if trace_url is not None:
+            from agenticapi.trace_inspector import mount_trace_inspector
+
+            mount_trace_inspector(self, trace_url)
+
     @property
     def _dependency_overrides(self) -> dict[Callable[..., Any], Callable[..., Any]]:
         """Internal accessor used by the solver. Indirected for type narrowing."""
@@ -221,6 +240,8 @@ class AgenticApp:
         response_model: type[BaseModel] | None = None,
         dependencies: list[Dependency] | None = None,
         streaming: str | None = None,
+        loop_config: LoopConfig | None = None,
+        workflow: Any | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Register an agent endpoint.
 
@@ -248,6 +269,10 @@ class AgenticApp:
                 propagate normally so an auth check that raises
                 ``AuthenticationError`` short-circuits the request.
                 Mirrors FastAPI's ``dependencies=`` parameter.
+            workflow: Optional :class:`AgentWorkflow` for multi-step
+                workflow execution. When set, the intent is fed into
+                the workflow engine instead of the handler. The
+                handler serves as a fallback for manual-mode endpoints.
 
         Returns:
             A decorator that registers the handler function.
@@ -275,6 +300,8 @@ class AgenticApp:
                 injection_plan=scan_handler(func),
                 dependencies=list(dependencies or []),
                 streaming=streaming,
+                loop_config=loop_config,
+                workflow=workflow,
             )
             # Force Starlette app rebuild on next request
             self._starlette_app = None
@@ -743,11 +770,59 @@ class AgenticApp:
                 intent_domain=intent.domain or "",
             )
 
+        # Workflow execution: when a workflow is attached to the endpoint,
+        # bypass the handler and run the workflow engine.
+        if endpoint_def.workflow is not None:
+            return await self._execute_workflow(intent, context, endpoint_def), None
+
         if self._llm is not None and self._harness is not None and endpoint_def.autonomy_level != "manual":
             return await self._execute_with_harness(intent, context, endpoint_def), None
 
         # Direct handler invocation: no LLM/harness, or autonomy_level="manual"
         return await self._execute_handler_directly(intent, context, endpoint_def)
+
+    async def _execute_workflow(
+        self,
+        intent: Intent[Any],
+        context: AgentContext,
+        endpoint_def: AgentEndpointDef,
+    ) -> AgentResponse:
+        """Execute a workflow attached to the endpoint.
+
+        When ``endpoint_def.workflow`` is set, the framework runs the
+        workflow engine instead of the handler. The intent text is
+        available via ``context.metadata["intent_raw"]``.
+        """
+        wf = endpoint_def.workflow
+        assert wf is not None
+
+        result = await wf.run(
+            context=context,
+            harness=self._harness,
+            tools=self._tools,
+        )
+
+        if result.paused:
+            return AgentResponse(
+                result={
+                    "status": "paused",
+                    "paused_at_step": result.paused_at_step,
+                    "workflow_id": result.workflow_id,
+                    "steps_executed": result.steps_executed,
+                    "state": result.final_state.model_dump(mode="json"),
+                },
+                status="pending_approval",
+            )
+
+        return AgentResponse(
+            result={
+                "status": "completed",
+                "steps_executed": result.steps_executed,
+                "duration_ms": result.total_duration_ms,
+                "state": result.final_state.model_dump(mode="json"),
+            },
+            status="completed",
+        )
 
     async def _execute_with_harness(
         self,
@@ -775,14 +850,19 @@ class AgenticApp:
         """
         assert self._harness is not None
 
-        # Phase E4 tool-first path. We only try this when a tool
-        # registry is configured and the LLM backend supports native
-        # function calling — otherwise there's no way to ask the LLM
-        # for a structured tool call and we'd just end up hitting the
-        # code-generation path with extra overhead.
-        tool_first_result = await self._try_tool_first_path(intent, context, endpoint_def)
-        if tool_first_result is not None:
-            return tool_first_result
+        # Multi-turn agentic loop path. When tools are registered and
+        # an LLM backend is available, use the agentic loop (ReAct
+        # pattern) that iteratively dispatches tool calls through the
+        # harness and feeds results back to the LLM until it produces
+        # a final text answer. This supersedes the single-shot
+        # tool-first path (E4) — which only handled exactly one tool
+        # call — and makes the framework genuinely agentic.
+        if self._tools is not None and self._llm is not None:
+            tool_defs = self._tools.get_definitions()
+            if tool_defs:
+                loop_result = await self._run_agentic_loop(intent, context, endpoint_def)
+                if loop_result is not None:
+                    return loop_result
 
         # Lazy-init code generator for the fallback path.
         if self._code_generator is None:
@@ -906,6 +986,113 @@ class AgenticApp:
             reasoning=result.reasoning,
             confidence=generated_confidence,
             execution_trace_id=result.trace.trace_id if result.trace else None,
+        )
+
+    async def _run_agentic_loop(
+        self,
+        intent: Intent[Any],
+        context: AgentContext,
+        endpoint_def: AgentEndpointDef,
+    ) -> AgentResponse | None:
+        """Run the multi-turn agentic loop (ReAct pattern).
+
+        Sends the user intent to the LLM with registered tool
+        definitions. When the LLM returns tool calls, dispatches them
+        through the harness and feeds results back. Repeats until the
+        LLM produces a final text answer or the iteration limit is
+        reached.
+
+        Returns ``None`` when prerequisites are not met (no tools,
+        no LLM, no harness), in which case the caller falls back to
+        code generation.
+        """
+        if self._tools is None or self._llm is None or self._harness is None:
+            return None
+
+        from agenticapi.runtime.llm.base import LLMMessage, LLMPrompt
+        from agenticapi.runtime.loop import LoopConfig, run_agentic_loop
+
+        tool_definitions = self._tools.get_definitions()
+        if not tool_definitions:
+            return None
+
+        config = endpoint_def.loop_config or LoopConfig()
+
+        # Enrich context metadata for the loop's harness calls.
+        context.metadata["intent_raw"] = intent.raw
+        context.metadata["intent_action"] = intent.action.value
+        context.metadata["intent_domain"] = intent.domain
+
+        prompt = LLMPrompt(
+            system=(
+                "You are an agent with access to a set of tools. "
+                "Use the tools to help the user. When you have enough "
+                "information to answer, respond with a final text answer. "
+                "Think step by step about which tools to call."
+            ),
+            messages=[LLMMessage(role="user", content=intent.raw)],
+        )
+
+        # Extract budget policy from the harness if present.
+        budget_policy = None
+        pricing = None
+        for policy in self._harness._evaluator.policies:
+            from agenticapi.harness.policy.budget_policy import BudgetPolicy
+
+            if isinstance(policy, BudgetPolicy):
+                budget_policy = policy
+                pricing = policy.pricing
+                break
+
+        try:
+            result = await run_agentic_loop(
+                llm=self._llm,
+                tools=self._tools,
+                harness=self._harness,
+                prompt=prompt,
+                config=config,
+                budget_policy=budget_policy,
+                pricing=pricing,
+                context=context,
+            )
+        except Exception as exc:
+            logger.warning(
+                "agentic_loop_failed_falling_back",
+                endpoint=endpoint_def.name,
+                error=str(exc),
+            )
+            # Re-raise policy violations and budget errors; fall back
+            # to code-gen for other failures.
+            from agenticapi.exceptions import BudgetExceeded
+
+            if isinstance(exc, (PolicyViolation, BudgetExceeded)):
+                raise
+            return None
+
+        logger.info(
+            "agentic_loop_completed",
+            endpoint=endpoint_def.name,
+            iterations=result.iterations,
+            tool_calls=len(result.tool_calls_made),
+            total_cost_usd=result.total_cost_usd,
+        )
+        return AgentResponse(
+            result=result.final_text,
+            status="completed",
+            reasoning=json.dumps(
+                [
+                    {
+                        "iteration": r.iteration,
+                        "tool": r.tool_name,
+                        "arguments": r.arguments,
+                        "duration_ms": r.duration_ms,
+                    }
+                    for r in result.tool_calls_made
+                ]
+            )
+            if result.tool_calls_made
+            else None,
+            confidence=1.0,
         )
 
     async def _try_tool_first_path(
@@ -1204,6 +1391,14 @@ class AgenticApp:
                     redoc_url=self._redoc_url or "/redoc",
                 )
             )
+
+        # Playground routes (Element 3).
+        if self._playground_routes:
+            routes.extend(self._playground_routes)
+
+        # Trace inspector routes.
+        if self._trace_inspector_routes:
+            routes.extend(self._trace_inspector_routes)
 
         lifespan_managers = list(self._lifespan_managers)
 

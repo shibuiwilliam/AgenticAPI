@@ -1,11 +1,11 @@
 # AgenticAPI
 
-**The agent-native web framework for Python.** Build APIs where endpoints understand natural language, generate code on the fly, and execute it safely behind a multi-layered harness -- all with the developer ergonomics you know from FastAPI.
+**The agent-native web framework for Python.** Build APIs where endpoints understand natural language, call tools autonomously, and execute safely behind a multi-layered harness — with the developer ergonomics you know from FastAPI.
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1310%20passing-brightgreen.svg)]()
-[![Examples](https://img.shields.io/badge/examples-27%20runnable-blueviolet.svg)](./examples)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-yellow.svg)](./LICENSE)
+[![Tests](https://img.shields.io/badge/tests-1520%20passing-brightgreen.svg)]()
+[![Examples](https://img.shields.io/badge/examples-32%20runnable-blueviolet.svg)](./examples)
 
 ```python
 from agenticapi import AgenticApp, AgentResponse, Intent
@@ -28,54 +28,43 @@ curl -X POST http://127.0.0.1:8000/agent/greeter \
     -d '{"intent": "Hello, how are you?"}'
 ```
 
-You instantly get Swagger UI at `/docs`, ReDoc at `/redoc`, an OpenAPI 3.1 spec at `/openapi.json`, and `/health` + `/capabilities` endpoints -- no extra wiring.
+You instantly get Swagger UI at `/docs`, ReDoc at `/redoc`, an OpenAPI 3.1 spec at `/openapi.json`, and `/health` + `/capabilities` endpoints — no extra wiring.
 
 ---
 
 ## Table of Contents
 
-- [AgenticAPI](#agenticapi)
-  - [Table of Contents](#table-of-contents)
-  - [Why AgenticAPI?](#why-agenticapi)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Quick Tour](#quick-tour)
-    - [1. Minimal endpoint (no LLM needed)](#1-minimal-endpoint-no-llm-needed)
-    - [2. With an LLM and the safety harness](#2-with-an-llm-and-the-safety-harness)
-    - [3. Typed intents](#3-typed-intents)
-    - [4. Dependency injection](#4-dependency-injection)
-    - [5. Programmatic usage (no HTTP)](#5-programmatic-usage-no-http)
-  - [How It Maps to FastAPI](#how-it-maps-to-fastapi)
-  - [Features at a Glance](#features-at-a-glance)
-  - [Safety: The Harness System](#safety-the-harness-system)
-    - [Policies](#policies)
-    - [Agent Memory](#agent-memory)
-    - [Code Cache](#code-cache)
-    - [Streaming](#streaming)
-    - [Cost Budgeting](#cost-budgeting)
-    - [Sandbox \& Audit](#sandbox--audit)
-  - [Native Function Calling](#native-function-calling)
-  - [Multi-Agent Orchestration](#multi-agent-orchestration)
-  - [Authentication](#authentication)
-  - [LLM Backends](#llm-backends)
-  - [Tools](#tools)
-  - [Custom Responses, HTMX \& File Handling](#custom-responses-htmx--file-handling)
-  - [MCP, REST Compatibility \& Middleware](#mcp-rest-compatibility--middleware)
-  - [Observability](#observability)
-  - [Extensions](#extensions)
-  - [Examples](#examples)
-  - [CLI Reference](#cli-reference)
-  - [Development](#development)
-    - [Common Commands](#common-commands)
-    - [Running Tests](#running-tests)
-    - [Code Quality](#code-quality)
-    - [Pre-commit Hooks](#pre-commit-hooks)
-  - [Project Structure](#project-structure)
-  - [Requirements](#requirements)
-  - [Documentation](#documentation)
-    - [Where everything lives](#where-everything-lives)
-  - [Contributing](#contributing)
-  - [License](#license)
+- [Why AgenticAPI?](#why-agenticapi)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Quick Tour](#quick-tour)
+- [How It Maps to FastAPI](#how-it-maps-to-fastapi)
+- [Features at a Glance](#features-at-a-glance)
+- [The Harness: Safety by Default](#the-harness-safety-by-default)
+- [Agentic Loop](#agentic-loop)
+- [Workflow Engine](#workflow-engine)
+- [Agent Playground & Trace Inspector](#agent-playground--trace-inspector)
+- [Multi-Agent Orchestration](#multi-agent-orchestration)
+- [Native Function Calling](#native-function-calling)
+- [Harness-Governed MCP Tool Server](#harness-governed-mcp-tool-server)
+- [LLM Backends](#llm-backends)
+- [Tools](#tools)
+- [Authentication](#authentication)
+- [Streaming](#streaming)
+- [Cost Budgeting](#cost-budgeting)
+- [Agent Memory](#agent-memory)
+- [Custom Responses, HTMX & File Handling](#custom-responses-htmx--file-handling)
+- [MCP & REST Compatibility](#mcp--rest-compatibility)
+- [Observability](#observability)
+- [Extensions](#extensions)
+- [Examples](#examples)
+- [CLI Reference](#cli-reference)
+- [Development](#development)
+- [Project Structure](#project-structure)
+- [Requirements](#requirements)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -83,20 +72,20 @@ You instantly get Swagger UI at `/docs`, ReDoc at `/redoc`, an OpenAPI 3.1 spec 
 
 > **FastAPI is for type-safe REST APIs. AgenticAPI is for harnessed agent APIs.**
 
-Traditional web frameworks expect structured request bodies. AgenticAPI endpoints accept natural-language **intents** instead. Under the hood an LLM can parse those intents into Pydantic schemas, choose tools via native function calling, or even generate Python code -- and a multi-layered **harness** evaluates, sandboxes, budgets, and audits every execution before it ever touches your data.
+Traditional web frameworks expect structured request bodies. AgenticAPI endpoints accept natural-language **intents** instead. Under the hood an LLM can parse those intents into Pydantic schemas, choose tools via native function calling, or generate Python code — and a multi-layered **harness** evaluates, sandboxes, budgets, and audits every execution before it ever touches your data.
 
 The best part: **you can use it with or without an LLM.**
 
-- **Without an LLM** -- a clean decorator-based ASGI framework with FastAPI-like ergonomics: dependency injection, `response_model` validation, authentication, OpenAPI docs, HTMX support, file upload/download, streaming (SSE + NDJSON), background tasks, and more.
-- **With an LLM** -- a complete agent execution platform: typed structured outputs, native function calling across Anthropic/OpenAI/Gemini with retry and backoff, policy enforcement (code, data, resources, budget, prompt-injection, PII), AST analysis, process sandboxing, approval workflows, persistent audit trails, agent memory, code caching, autonomy escalation, multi-agent orchestration, and full observability.
+- **Without an LLM** — a clean decorator-based ASGI framework with FastAPI-like ergonomics: dependency injection, `response_model` validation, authentication, OpenAPI docs, HTMX support, file upload/download, streaming (SSE + NDJSON), background tasks, and more.
+- **With an LLM** — a complete agent execution platform: multi-turn agentic loops, declarative workflows, native function calling across Anthropic/OpenAI/Gemini, policy enforcement, process sandboxing, approval workflows, persistent audit trails, agent memory, code caching, autonomy escalation, multi-agent orchestration, and full observability.
 
-Either way you get **27 runnable examples** to copy from, **1,310 passing tests** that prove every feature works, and a production-ready observability story (OpenTelemetry spans, Prometheus metrics, W3C trace propagation -- all optional, all graceful no-ops when unused).
+Either way you get **32 runnable examples** to copy from, **1,520 passing tests** that prove every feature works, and a production-ready observability story (OpenTelemetry spans, Prometheus metrics, W3C trace propagation — all optional, all graceful no-ops when unused).
 
 ---
 
 ## Installation
 
-**Python 3.13+** is required. The framework uses `match`, `type` aliases, `StrEnum`, and other modern features.
+**Python 3.13+** is required.
 
 ```bash
 pip install agentharnessapi
@@ -116,7 +105,7 @@ Optional extras:
 pip install agentharnessapi[mcp]                  # MCP server support
 pip install agentharnessapi[claude-agent-sdk]      # Full Claude Agent SDK loop
 
-# Observability -- all optional, all graceful no-ops when missing
+# Observability — all optional, all graceful no-ops when missing
 pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp
 pip install prometheus-client
 ```
@@ -133,7 +122,7 @@ cd my-agent
 agenticapi dev --app app:app
 ```
 
-This generates a ready-to-run project with a handler, tools, harness, and an eval set -- all wired together. It works immediately with `MockBackend` (no API key needed). Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY` to switch to a real provider.
+This generates a ready-to-run project with a handler, tools, harness, and an eval set — all wired together. It works immediately with `MockBackend` (no API key needed). Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY` to switch to a real provider.
 
 ```
 my-agent/
@@ -187,8 +176,6 @@ Every app automatically registers `/health`, `/capabilities`, `/docs`, `/redoc`,
 
 ### 2. With an LLM and the safety harness
 
-Add an LLM backend and harness engine to generate and safely execute code from natural language:
-
 ```python
 from agenticapi import AgenticApp, CodePolicy, DataPolicy, HarnessEngine
 from agenticapi.runtime.llm.anthropic import AnthropicBackend
@@ -213,7 +200,7 @@ The pipeline: **parse intent -> generate code via LLM -> evaluate policies -> AS
 
 ### 3. Typed intents
 
-Constrain the LLM's output to a Pydantic schema -- full validation before the handler runs:
+Constrain the LLM's output to a Pydantic schema — full validation before the handler runs:
 
 ```python
 from pydantic import BaseModel, Field
@@ -225,11 +212,9 @@ class OrderSearch(BaseModel):
 
 @app.agent_endpoint(name="orders.search")
 async def search(intent: Intent[OrderSearch], context):
-    query = intent.params  # already validated, fully typed, autocomplete works
+    query = intent.params  # already validated, fully typed
     return {"status": query.status, "limit": query.limit}
 ```
-
-See [example 17](./examples/17_typed_intents) for the full pattern.
 
 ### 4. Dependency injection
 
@@ -247,8 +232,6 @@ async def list_orders(intent, context, db=Depends(get_db)):
     return {"orders": await db.fetch("SELECT * FROM orders")}
 ```
 
-See [example 14](./examples/14_dependency_injection) for nested deps, route-level deps, and `@tool`.
-
 ### 5. Programmatic usage (no HTTP)
 
 ```python
@@ -258,15 +241,11 @@ response = await app.process_intent(
     session_id="session-123",
 )
 print(response.result)
-print(response.generated_code)
-print(response.reasoning)
 ```
 
 ---
 
 ## How It Maps to FastAPI
-
-If you know FastAPI, you already know the patterns:
 
 | FastAPI | AgenticAPI | Notes |
 |---|---|---|
@@ -292,45 +271,39 @@ If you know FastAPI, you already know the patterns:
 | Category | What you get |
 |---|---|
 | **Agent endpoints** | Decorator-based registration, natural-language intents, routers with prefix/tags |
-| **Typed intents** | Constrain LLM output to a Pydantic schema with `Intent[T]` -- full validation, IDE autocompletion |
-| **Multi-LLM** | Anthropic Claude, OpenAI GPT, Google Gemini, deterministic Mock -- swap with one line |
-| **Native function calling** | First-class `ToolCall` + `finish_reason` + `tool_choice` across every backend, with retry and backoff |
+| **Agentic loop** | Multi-turn ReAct pattern — LLM autonomously calls tools and reasons to a final answer, all harness-governed |
+| **Workflow engine** | Declarative multi-step workflows with typed state, conditional branching, parallel execution, checkpoints |
+| **Agent playground** | Self-hosted debugger UI at `/_playground` for chatting with agents and inspecting execution traces |
+| **Trace inspector** | Self-hosted trace inspection UI at `/_trace` with search, diff, cost analytics, and compliance export |
+| **Typed intents** | Constrain LLM output to a Pydantic schema with `Intent[T]` — full validation, IDE autocompletion |
+| **Multi-LLM** | Anthropic Claude, OpenAI GPT, Google Gemini, deterministic Mock — swap with one line |
+| **Native function calling** | Provider-native `ToolCall` + `finish_reason` + `tool_choice` across every backend, with retry and backoff |
+| **Harness MCP server** | Expose `@tool` functions as MCP tools with full harness governance (policies, audit, budget) |
 | **Multi-agent orchestration** | `AgentMesh` with `@mesh.role` / `@mesh.orchestrator`, budget propagation, cycle detection |
 | **Safety harness** | 8 policy types, static AST analysis, process sandbox, monitors, validators, audit trail |
 | **Prompt-injection & PII** | `PromptInjectionPolicy` detects injection attacks; `PIIPolicy` + `redact_pii` catch and mask sensitive data |
-| **Persistent audit** | In-memory for dev or `SqliteAuditRecorder` for production -- stdlib only, zero new deps |
 | **Cost budgeting** | Pre-call enforcement via `BudgetPolicy` and `PricingRegistry` with 4 independent scopes |
-| **Agent memory** | `MemoryStore` with SQLite and in-memory backends -- persist facts, preferences, and conversation history |
-| **Code cache** | `CodeCache` skips the LLM entirely when an identical intent has an approved cached answer |
+| **Agent memory** | `MemoryStore` with SQLite and in-memory backends — persist facts, preferences, and conversation history |
 | **Streaming** | `AgentStream` with SSE and NDJSON transports, mid-stream approval pauses, replay after completion |
 | **Autonomy policy** | `AutonomyPolicy` with `EscalateWhen` rules for live escalation during agent execution |
+| **Code cache** | `CodeCache` skips the LLM entirely when an identical intent has an approved cached answer |
 | **Approval workflows** | Human-in-the-loop for sensitive operations with HTTP 202 + async resolve |
-| **Authentication** | API key, Bearer token, Basic auth -- per-endpoint, per-router, or app-wide |
+| **Authentication** | API key, Bearer token, Basic auth — per-endpoint, per-router, or app-wide |
 | **Dependency injection** | FastAPI-style `Depends()` with sync/async generators, caching, route-level deps |
-| **Response validation** | Pydantic `response_model` validates handler returns and publishes the schema in OpenAPI |
 | **Custom responses** | `HTMLResult`, `PlainTextResult`, `FileResult`, or any Starlette `Response` subclass |
 | **HTMX support** | `HtmxHeaders` auto-injection, `htmx_response_headers()`, partial page updates |
 | **File handling** | Upload via multipart, download via `FileResult`, streaming responses |
 | **MCP support** | Expose endpoints as MCP tools for Claude Desktop, Cursor, and other LLM clients |
-| **`@tool` decorator** | Turn plain functions into registered tools with auto-generated JSON schemas |
-| **Project scaffolding** | `agenticapi init` generates a ready-to-run project with tools, harness, and evals |
-| **Background tasks** | `AgentTasks` for post-response work (like FastAPI's `BackgroundTasks`) |
-| **Middleware** | Full Starlette middleware (CORS, compression, custom) |
-| **Dynamic pipelines** | Agent-level processing stages composed at runtime |
-| **Agent-to-Agent** | Capability discovery, trust scoring, inter-agent communication |
-| **Sessions** | Multi-turn conversations with context accumulation and TTL expiration |
-| **REST compatibility** | Mount FastAPI inside AgenticAPI, or expose agent endpoints as REST routes |
-| **Extensions** | Optional extras like `agentharnessapi[claude-agent-sdk]` for heavyweight integrations |
 | **Observability** | OpenTelemetry spans + Prometheus metrics + W3C trace propagation, graceful no-op when absent |
 | **Eval harness** | Regression-test agent endpoints with deterministic assertion suites |
 | **OpenAPI docs** | Auto-generated Swagger UI, ReDoc, and OpenAPI 3.1.0 schema |
-| **ASGI-native** | Built on Starlette -- runs with uvicorn, Daphne, Hypercorn |
+| **ASGI-native** | Built on Starlette — runs with uvicorn, Daphne, Hypercorn |
 
-**Current scale:** 118 source modules, ~25,000 lines of code, **1,310 tests** (+38 in extensions), 27 runnable examples, 1 published extension.
+**Current scale:** 141 source modules, ~26,700 lines of code, **1,520 tests**, 32 runnable examples, 86 public API exports.
 
 ---
 
-## Safety: The Harness System
+## The Harness: Safety by Default
 
 Every piece of LLM-generated code passes through a multi-layered safety pipeline before it executes:
 
@@ -344,8 +317,6 @@ Generated Code
   -> Audit Trail Recording (in-memory or SQLite-backed)
 ```
 
-### Policies
-
 ```python
 from agenticapi import (
     CodePolicy, DataPolicy, ResourcePolicy, RuntimePolicy,
@@ -357,92 +328,132 @@ DataPolicy(readable_tables=["orders"], deny_ddl=True)
 ResourcePolicy(max_cpu_seconds=30, max_memory_mb=512)
 RuntimePolicy(max_code_complexity=500)
 BudgetPolicy(pricing=PricingRegistry.default(), max_per_request_usd=0.10)
-PromptInjectionPolicy()          # detects injection attacks in user input
-PIIPolicy()                       # catches email, phone, SSN patterns
+PromptInjectionPolicy()     # detects injection attacks in user input
+PIIPolicy()                  # catches email, phone, SSN patterns
 ```
 
-### Agent Memory
-
-Agents can persist facts, preferences, and conversation history across sessions:
-
-```python
-from agenticapi import AgenticApp, SqliteMemoryStore
-
-app = AgenticApp(
-    title="Personal Assistant",
-    memory=SqliteMemoryStore(path="./memory.sqlite"),
-)
-```
-
-Memories are typed (`MemoryKind`: fact, preference, conversation, system) and stored with timestamps for retrieval and relevance scoring. See [example 21](./examples/21_persistent_memory).
-
-### Code Cache
-
-Skip the LLM entirely when an identical intent already has an approved answer:
-
-```python
-from agenticapi import AgenticApp, InMemoryCodeCache
-
-app = AgenticApp(title="Cached Agent", code_cache=InMemoryCodeCache())
-```
-
-See [example 24](./examples/24_code_cache).
-
-### Streaming
-
-Handlers can emit events over SSE or NDJSON, pause for mid-stream approval, and support replay after completion:
-
-```python
-@app.agent_endpoint(name="deploy", streaming="sse")
-async def deploy(intent, context, stream: AgentStream):
-    await stream.emit(AgentEvent(kind="progress", data={"step": 1}))
-    decision = await stream.request_approval(reason="Continue deploy?")
-    await stream.emit(AgentEvent(kind="complete", data={"approved": decision}))
-    return {"status": "deployed"}
-```
-
-See [example 20](./examples/20_streaming_release_control) for the full pattern with SSE, NDJSON, resume, and replay routes.
-
-### Cost Budgeting
-
-`BudgetPolicy` enforces cost ceilings **before** the LLM call with 4 independent scopes (per-request, per-session, per-user-per-day, per-endpoint-per-day). When a request would exceed any limit the harness raises `BudgetExceeded` (HTTP 402) **before any tokens are spent**. See [example 15](./examples/15_budget_policy).
-
-### Sandbox & Audit
-
-Generated code runs in an isolated subprocess with timeout, resource metrics, and stdout/stderr capture. Every execution is recorded as an `ExecutionTrace`. Choose `InMemoryAuditRecorder` for dev or `SqliteAuditRecorder` for production -- zero new dependencies (stdlib `sqlite3`). See [example 16](./examples/16_observability).
+See [example 22](./examples/22_safety_policies) for shadow mode, redact mode, and custom patterns. See [example 31](./examples/31_sandbox_and_guards) for the full defence-in-depth sandbox pipeline.
 
 ---
 
-## Native Function Calling
+## Agentic Loop
 
-All three LLM backends support native function calling with automatic retry and exponential backoff:
+The multi-turn agentic loop is the core of what makes AgenticAPI an *agent* framework. The LLM autonomously decides which tools to call, inspects intermediate results, and reasons step-by-step to a final answer — all under harness governance.
 
 ```python
-from agenticapi import tool
-from agenticapi.runtime.tools import ToolRegistry
-from agenticapi.runtime.llm import AnthropicBackend, LLMPrompt, LLMMessage
+from agenticapi import AgenticApp, tool, LoopConfig
+from agenticapi.harness.engine import HarnessEngine
+from agenticapi.runtime.tools.registry import ToolRegistry
 
-@tool(description="Look up current weather for a city")
+@tool(description="Get current weather for a city")
 async def get_weather(city: str) -> dict:
-    return {"city": city, "temp": 22, "condition": "sunny"}
+    return {"city": city, "temp": 22, "rain_pct": 80}
 
-# The LLM decides when to call tools -- you get structured ToolCall objects back
-backend = AnthropicBackend()  # also OpenAIBackend(), GeminiBackend()
-response = await backend.generate(
-    LLMPrompt(
-        system="You are a helpful assistant.",
-        messages=[LLMMessage(role="user", content="What's the weather in Tokyo?")],
-        tools=[get_weather.tool.definition.to_dict()],
-        tool_choice="auto",  # "auto", "required", "none", or {"type": "tool", "name": "..."}
-    )
+@tool(description="Get clothing advice")
+async def get_clothing_advice(temp: int, is_raining: bool) -> str:
+    return "Wear a waterproof jacket." if is_raining else "Light clothing is fine."
+
+registry = ToolRegistry([get_weather, get_clothing_advice])
+
+app = AgenticApp(
+    title="Weather Advisor",
+    llm=backend,
+    harness=HarnessEngine(),
+    tools=registry,
 )
 
-if response.finish_reason == "tool_calls":
-    for call in response.tool_calls:
-        print(f"Tool: {call.name}, Args: {call.arguments}")
+@app.agent_endpoint(name="advisor", loop_config=LoopConfig(max_iterations=5))
+async def advisor(intent, context):
+    return {}  # fallback — the agentic loop handles tool dispatch
 ```
 
-Every backend automatically retries on transient errors (rate limits, timeouts, 5xx) with configurable `RetryConfig`. See [example 19](./examples/19_native_function_calling) for a multi-turn tool-use loop.
+What happens when a user asks *"Should I go out in Tokyo today?"*:
+
+1. **Iteration 1:** LLM decides to call `get_weather("Tokyo")` -> `{temp: 22, rain_pct: 80}`
+2. **Iteration 2:** LLM sees 80% rain, calls `get_clothing_advice(22, True)` -> `"Wear a waterproof jacket."`
+3. **Iteration 3:** LLM returns: *"It's 22C with 80% chance of rain. Wear a waterproof jacket and carry an umbrella."*
+
+Every tool call goes through `HarnessEngine.call_tool()` — policy-checked, audit-recorded, budget-tracked. See [example 29](./examples/29_agentic_loop).
+
+You can also use the loop standalone:
+
+```python
+from agenticapi import run_agentic_loop, LoopConfig
+
+result = await run_agentic_loop(
+    llm=backend, tools=registry, harness=harness,
+    prompt=prompt, config=LoopConfig(max_iterations=10),
+)
+print(result.final_text)           # "Wear a waterproof jacket..."
+print(result.iterations)           # 3
+print(result.tool_calls_made)      # [ToolCallRecord(...), ...]
+```
+
+---
+
+## Workflow Engine
+
+For multi-step processes that need conditional branching, parallel execution, or human-in-the-loop checkpoints, use the declarative workflow engine.
+
+```python
+from agenticapi import AgentWorkflow, WorkflowState, WorkflowContext
+
+class AnalysisState(WorkflowState):
+    document_text: str = ""
+    summary: str = ""
+    risk_level: str = "unknown"
+
+workflow = AgentWorkflow(name="analysis", state_class=AnalysisState)
+
+@workflow.step("parse")
+async def parse(state: AnalysisState, ctx: WorkflowContext) -> str:
+    state.document_text = await ctx.call_tool("extract_text", document_id="doc-1")
+    return "analyze"
+
+@workflow.step("analyze")
+async def analyze(state: AnalysisState, ctx: WorkflowContext) -> str:
+    state.summary = await ctx.llm_generate(f"Summarize: {state.document_text}")
+    if "material risk" in state.summary.lower():
+        state.risk_level = "high"
+        return "review"      # human review for high-risk docs
+    state.risk_level = "low"
+    return "done"
+
+@workflow.step("review", checkpoint=True)
+async def review(state: AnalysisState, ctx: WorkflowContext) -> str:
+    return "done"            # continues after human approval
+
+@workflow.step("done")
+async def done(state: AnalysisState, ctx: WorkflowContext) -> None:
+    return None              # workflow complete
+
+# Wire directly into an endpoint — the framework handles everything:
+@app.agent_endpoint(name="analyze", workflow=workflow)
+async def handler(intent, context):
+    return {}  # fallback
+```
+
+Workflows support typed state, conditional routing, parallel execution (`return ["step_a", "step_b"]`), checkpoints, per-step retry and timeout, `SqliteWorkflowStore` for persistence, and `workflow.to_mermaid()` for graph export. See [example 30](./examples/30_agent_workflow).
+
+---
+
+## Agent Playground & Trace Inspector
+
+Two self-hosted, zero-dependency debug UIs — no npm, no build step, no external services.
+
+```python
+app = AgenticApp(
+    title="My Agent",
+    playground_url="/_playground",   # agent chat + trace viewer
+    trace_url="/_trace",             # trace search, diff, cost analytics
+)
+```
+
+**Playground** (`/_playground`) — three-panel interface: Agent Chat | Execution Trace | Trace History. Select an endpoint, type an intent, see the response with a timeline of policy decisions, tool calls, and LLM costs.
+
+**Trace Inspector** (`/_trace`) — production-grade trace analysis: filter by endpoint, status, tool, date range, or cost; compare two traces side-by-side; see per-tool cost breakdowns; export traces as JSON compliance reports.
+
+Both are disabled by default in production (`playground_url=None`, `trace_url=None`).
 
 ---
 
@@ -471,19 +482,90 @@ async def pipeline(intent, mesh_ctx):
     return {"research": research, "review": review}
 ```
 
-```bash
-curl -X POST http://localhost:8000/agent/pipeline \
-  -H "Content-Type: application/json" \
-  -d '{"intent": "quantum computing"}'
+The mesh provides in-process routing, budget propagation, cycle detection, and standalone endpoints for every role. See [example 27](./examples/27_multi_agent_pipeline).
+
+---
+
+## Native Function Calling
+
+All LLM backends translate between the framework's generic tool format and each provider's native wire format — and parse responses into framework-standard `ToolCall` objects:
+
+```python
+from agenticapi import tool
+from agenticapi.runtime.llm.base import LLMPrompt, LLMMessage
+
+@tool(description="Look up current weather for a city")
+async def get_weather(city: str) -> dict:
+    return {"city": city, "temp": 22, "condition": "sunny"}
+
+response = await backend.generate(
+    LLMPrompt(
+        system="You are a helpful assistant.",
+        messages=[LLMMessage(role="user", content="What's the weather in Tokyo?")],
+        tools=[{"name": "get_weather", "description": "...", "parameters": {...}}],
+        tool_choice="auto",
+    )
+)
+
+if response.finish_reason == "tool_calls":
+    for call in response.tool_calls:
+        print(f"Tool: {call.name}, Args: {call.arguments}")
 ```
 
-The mesh provides:
-- **In-process routing** -- `MeshContext.call()` resolves roles locally (no HTTP overhead)
-- **Budget propagation** -- sub-agent calls debit the orchestrator's ceiling
-- **Cycle detection** -- role A calling role B calling role A raises `MeshCycleError`
-- **Standalone endpoints** -- every role is also exposed at `/agent/{role_name}`
+Every backend retries on transient errors (rate limits, timeouts, 5xx) with configurable `RetryConfig`. See [example 19](./examples/19_native_function_calling).
 
-See [example 27](./examples/27_multi_agent_pipeline) for a 3-role research pipeline.
+---
+
+## Harness-Governed MCP Tool Server
+
+Expose your `@tool` functions as MCP tools with full harness governance — every call from Claude Code, Cursor, or any MCP client goes through your policies, audit trail, and budget controls:
+
+```python
+from agenticapi.mcp_tools import HarnessMCPServer
+
+app = AgenticApp(harness=harness, tools=registry)
+HarnessMCPServer(app, path="/mcp/tools")
+```
+
+When an AI assistant calls your tool via MCP:
+1. `PromptInjectionPolicy` scans the arguments
+2. `DataPolicy` verifies access permissions
+3. The tool executes
+4. `PIIPolicy` scans the result
+5. `AuditRecorder` logs the call
+
+Requires `pip install agentharnessapi[mcp]`. See [example 32](./examples/32_harness_mcp_tools).
+
+---
+
+## LLM Backends
+
+| Backend | Provider | Env Variable | Function Calling | Retry |
+|---|---|---|---|---|
+| `AnthropicBackend` | Anthropic Claude | `ANTHROPIC_API_KEY` | `tool_use` blocks | RateLimitError, Timeout, 5xx |
+| `OpenAIBackend` | OpenAI GPT | `OPENAI_API_KEY` | `tool_calls` on message | RateLimitError, Timeout |
+| `GeminiBackend` | Google Gemini | `GOOGLE_API_KEY` | `function_call` parts | ResourceExhausted, Unavailable |
+| `MockBackend` | (Testing) | -- | Queued `ToolCall` objects | -- |
+
+All backends implement the `LLMBackend` protocol. Bring your own by implementing `generate()`, `generate_stream()`, and `model_name`.
+
+---
+
+## Tools
+
+```python
+from agenticapi import tool
+from agenticapi.runtime.tools import ToolRegistry
+
+@tool(description="Search the documentation index")
+async def search_docs(query: str, limit: int = 10) -> list[dict]:
+    return await index.search(query, limit=limit)
+
+registry = ToolRegistry()
+registry.register(search_docs)
+```
+
+The `@tool` decorator auto-generates the JSON schema from your type hints. See [example 14](./examples/14_dependency_injection) for the full pattern.
 
 ---
 
@@ -510,37 +592,46 @@ Available schemes: `APIKeyHeader`, `APIKeyQuery`, `HTTPBearer`, `HTTPBasic`. See
 
 ---
 
-## LLM Backends
+## Streaming
 
-| Backend | Provider | Default Model | Env Variable | Function Calling | Retry |
-|---|---|---|---|---|---|
-| `AnthropicBackend` | Anthropic | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` | `tool_use` blocks | RateLimitError, Timeout, 5xx |
-| `OpenAIBackend` | OpenAI | `gpt-5.4-mini` | `OPENAI_API_KEY` | `tool_calls` on message | RateLimitError, Timeout |
-| `GeminiBackend` | Google | `gemini-2.5-flash` | `GOOGLE_API_KEY` | `function_call` parts | ResourceExhausted, Unavailable |
-| `MockBackend` | (Testing) | `mock` | -- | Queued `ToolCall` objects | -- |
+Handlers can emit typed events over SSE or NDJSON, pause for mid-stream approval, and support replay:
 
-All backends implement the `LLMBackend` protocol and return `LLMResponse` with populated `tool_calls`, `finish_reason`, and `usage`. Bring your own by implementing `generate()`, `generate_stream()`, and `model_name`.
+```python
+from agenticapi.interface.stream import AgentStream
+
+@app.agent_endpoint(name="deploy", streaming="sse")
+async def deploy(intent, context, stream: AgentStream):
+    await stream.emit_thought("Checking deployment prerequisites...")
+    await stream.emit_tool_call_started(call_id="c1", name="health_check")
+    # ... do work ...
+    decision = await stream.request_approval(prompt="Continue deploy?")
+    await stream.emit_final(result={"status": "deployed"})
+```
+
+See [example 20](./examples/20_streaming_release_control) for SSE, NDJSON, resume, and replay.
 
 ---
 
-## Tools
+## Cost Budgeting
 
-Four built-in tools plus a `@tool` decorator for plain functions:
+`BudgetPolicy` enforces cost ceilings **before** the LLM call with 4 independent scopes (per-request, per-session, per-user-per-day, per-endpoint-per-day). When a request would exceed any limit the harness raises `BudgetExceeded` (HTTP 402) **before any tokens are spent**. See [example 15](./examples/15_budget_policy).
+
+---
+
+## Agent Memory
+
+Agents can persist facts, preferences, and conversation history across sessions:
 
 ```python
-from agenticapi import tool
-from agenticapi.runtime.tools import ToolRegistry, DatabaseTool, CacheTool
+from agenticapi import AgenticApp, SqliteMemoryStore
 
-@tool(description="Search the documentation index")
-async def search_docs(query: str, limit: int = 10) -> list[dict]:
-    return await index.search(query, limit=limit)
-
-registry = ToolRegistry()
-registry.register(search_docs)
-registry.register(DatabaseTool(name="db", execute_fn=my_query_fn, read_only=True))
+app = AgenticApp(
+    title="Personal Assistant",
+    memory=SqliteMemoryStore(path="./memory.sqlite"),
+)
 ```
 
-The `@tool` decorator auto-generates the JSON schema from your type hints and infers capabilities from the function name. See [example 19](./examples/19_native_function_calling) for the native function-calling pattern with a multi-turn tool-use loop.
+Memories are typed (`MemoryKind`: episodic, semantic, procedural) and scoped (per-user, per-session, global). See [example 21](./examples/21_persistent_memory).
 
 ---
 
@@ -556,15 +647,15 @@ async def dashboard(intent, context):
 @app.agent_endpoint(name="items")
 async def items(intent, context, htmx: HtmxHeaders):
     if htmx.is_htmx:
-        return HTMLResult(content="<li>Item 1</li>")     # Fragment
-    return HTMLResult(content="<html>Full page</html>")   # Full page
+        return HTMLResult(content="<li>Item 1</li>")
+    return HTMLResult(content="<html>Full page</html>")
 ```
 
 File upload via multipart, download via `FileResult`, streaming via Starlette. See examples [10](./examples/10_file_handling), [11](./examples/11_html_responses), [12](./examples/12_htmx).
 
 ---
 
-## MCP, REST Compatibility & Middleware
+## MCP & REST Compatibility
 
 ```python
 # Expose endpoints as MCP tools (pip install agentharnessapi[mcp])
@@ -584,7 +675,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
 
 ## Observability
 
-Structured logging via structlog is on by default. OpenTelemetry tracing and Prometheus metrics are auto-detected -- install the packages and call `configure_tracing()` / `configure_metrics()`:
+Structured logging via structlog is on by default. OpenTelemetry tracing and Prometheus metrics are auto-detected:
 
 ```python
 from agenticapi.observability import configure_tracing, configure_metrics
@@ -599,7 +690,7 @@ W3C trace propagation, request/latency/cost/denial metrics, graceful no-ops when
 
 ## Extensions
 
-Heavyweight integrations are released as separate packages under `extensions/`:
+Heavyweight integrations are released as separate packages:
 
 ```bash
 pip install agentharnessapi[claude-agent-sdk]
@@ -611,7 +702,6 @@ from agenticapi.ext.claude_agent_sdk import ClaudeAgentRunner
 runner = ClaudeAgentRunner(
     system_prompt="You are a coding assistant.",
     allowed_tools=["Read", "Glob", "Grep"],
-    policies=[CodePolicy(denied_modules=["os", "subprocess"])],
 )
 
 @app.agent_endpoint(name="assistant", autonomy_level="manual")
@@ -625,7 +715,7 @@ See [example 13](./examples/13_claude_agent_sdk).
 
 ## Examples
 
-Twenty-seven example apps, from minimal hello-world to multi-agent pipelines with budget propagation:
+Thirty-two example apps, from minimal hello-world to harness-governed MCP tool servers:
 
 | # | Example | LLM | Highlights |
 |---|---|---|---|
@@ -656,8 +746,13 @@ Twenty-seven example apps, from minimal hello-world to multi-agent pipelines wit
 | 25 | [harness_playground](./examples/25_harness_playground) | -- | Full harness with autonomy, safety, streaming |
 | 26 | [dynamic_pipeline](./examples/26_dynamic_pipeline) | -- | Middleware-like stage composition |
 | 27 | [multi_agent_pipeline](./examples/27_multi_agent_pipeline) | -- | 3-role `AgentMesh` with budget propagation |
+| 28 | [sessions_and_tasks](./examples/28_sessions_and_tasks) | -- | Multi-turn sessions, background tasks, 4 auth schemes |
+| 29 | [agentic_loop](./examples/29_agentic_loop) | Mock | Multi-turn ReAct loop with autonomous tool selection |
+| 30 | [agent_workflow](./examples/30_agent_workflow) | -- | Declarative workflow with branching and checkpoints |
+| 31 | [sandbox_and_guards](./examples/31_sandbox_and_guards) | -- | Defence-in-depth: static analysis, sandbox, monitors, validators |
+| 32 | [harness_mcp_tools](./examples/32_harness_mcp_tools) | -- | Harness-governed MCP tool server for AI assistants |
 
-Every example is a standalone ASGI app -- `agenticapi dev --app examples.NN_name.app:app` and you're running. See the [examples README](./examples/README.md) for curl commands and per-endpoint documentation.
+Every example is a standalone ASGI app — `agenticapi dev --app examples.NN_name.app:app` and you're running. See the [examples README](./examples/README.md) for curl commands and per-endpoint documentation.
 
 ---
 
@@ -682,23 +777,12 @@ cd AgenticAPI
 uv sync --group dev
 ```
 
-### Common Commands
-
-```bash
-make test          # Run all 1,310 tests
-make test-cov      # Tests with coverage
-make check         # Format + lint + typecheck
-make fix           # Auto-fix formatting and lint issues
-make dev           # Start dev server (hello agent example)
-make docs          # Live-reloading documentation
-```
-
 ### Running Tests
 
 ```bash
-uv run pytest                                # All tests
+uv run pytest                                # All 1,520 tests
 uv run pytest tests/unit/ -xvs              # Unit tests, stop on first failure
-uv run pytest tests/e2e/ -v                 # E2E tests for all 27 examples
+uv run pytest tests/e2e/ -v                 # E2E tests for all 32 examples
 uv run pytest -m "not requires_llm"         # Skip tests needing API keys
 uv run pytest --cov=src/agenticapi          # With coverage
 ```
@@ -717,17 +801,15 @@ uv run mypy src/agenticapi/                 # Type check (strict mode)
 pip install pre-commit && pre-commit install
 ```
 
-Hooks run `ruff format`, `ruff check`, and `mypy` automatically before each commit.
-
 ---
 
 ## Project Structure
 
 ```
 src/agenticapi/
-    __init__.py             # 73 public exports
-    app.py                  # AgenticApp -- main ASGI application
-    routing.py              # AgentRouter -- endpoint grouping
+    __init__.py             # 86 public exports
+    app.py                  # AgenticApp — main ASGI application
+    routing.py              # AgentRouter — endpoint grouping
     security.py             # Authentication (APIKeyHeader, HTTPBearer, Authenticator)
     exceptions.py           # Exception hierarchy with HTTP status mapping
     openapi.py              # OpenAPI schema, Swagger UI, ReDoc
@@ -736,42 +818,35 @@ src/agenticapi/
     interface/
         intent.py           # Intent, Intent[T], IntentParser, IntentScope
         response.py         # AgentResponse, FileResult, HTMLResult, PlainTextResult
-        stream.py           # AgentStream, AgentEvent -- SSE/NDJSON streaming
-        stream_store.py     # Replayable event storage
+        stream.py           # AgentStream, typed event types (SSE/NDJSON streaming)
         upload.py           # UploadFile, UploadedFiles
         htmx.py             # HtmxHeaders, htmx_response_headers
-        tasks.py            # AgentTasks (background tasks)
-        session.py          # SessionManager with TTL
-        transports/         # SSE and NDJSON framing helpers
         compat/             # REST, FastAPI, MCP compatibility
-        a2a/                # Agent-to-Agent protocol, capability, trust
     harness/
-        engine.py           # HarnessEngine -- safety pipeline orchestrator
+        engine.py           # HarnessEngine — safety pipeline orchestrator
         policy/             # Code, Data, Resource, Runtime, Budget, PromptInjection, PII, Autonomy
         sandbox/            # ProcessSandbox, static AST analysis, monitors, validators
         approval/           # ApprovalWorkflow, ApprovalRule
         audit/              # AuditRecorder, SqliteAuditRecorder, ExecutionTrace
     runtime/
+        loop.py             # run_agentic_loop — multi-turn ReAct pattern
         code_generator.py   # LLM-powered code generation
-        code_cache.py       # CodeCache, InMemoryCodeCache, CachedCode
+        code_cache.py       # CodeCache, InMemoryCodeCache
         context.py          # AgentContext, ContextWindow
         memory/             # MemoryStore, SqliteMemoryStore, InMemoryMemoryStore
-        llm/                # Anthropic, OpenAI, Gemini, Mock -- with ToolCall + RetryConfig
-        tools/              # Database, Cache, HTTP, Queue, @tool decorator
-        prompts/            # Prompt templates
-    mesh/                   # AgentMesh, MeshContext -- multi-agent orchestration
+        llm/                # Anthropic, OpenAI, Gemini, Mock — with ToolCall + RetryConfig
+        tools/              # ToolRegistry, @tool decorator, built-in tools
+    workflow/               # AgentWorkflow, WorkflowState, WorkflowStore
+    mesh/                   # AgentMesh, MeshContext — multi-agent orchestration
+    mcp_tools/              # HarnessMCPServer — governed MCP tool dispatch
+    playground/             # /_playground debugger UI
+    trace_inspector/        # /_trace inspection UI with search, diff, analytics
     observability/          # OpenTelemetry tracing, Prometheus metrics, W3C propagation
     evaluation/             # EvalSet, judges, runner
-    application/            # DynamicPipeline
-    ops/                    # OpsAgent, OpsHealthStatus
-    testing/                # mock_llm, MockSandbox, assertions, fixtures
     cli/                    # dev, console, replay, eval, init, version
 
-extensions/
-    agenticapi-claude-agent-sdk/   # Historical — now merged into agentharnessapi[claude-agent-sdk]
-
 examples/
-    01_hello_agent/ .. 27_multi_agent_pipeline/   # 27 runnable example apps
+    01_hello_agent/ .. 32_harness_mcp_tools/   # 32 runnable example apps
 ```
 
 ---
@@ -779,14 +854,14 @@ examples/
 ## Requirements
 
 - **Python** >= 3.13
-- **[Starlette](https://www.starlette.io/)** >= 1.0 -- ASGI foundation
-- **[Pydantic](https://docs.pydantic.dev/)** >= 2.12 -- Validation and schemas
-- **[structlog](https://www.structlog.org/)** >= 25.0 -- Structured logging
-- **[httpx](https://www.python-httpx.org/)** >= 0.28 -- Async HTTP client
-- **[python-multipart](https://github.com/Kludex/python-multipart)** >= 0.0.20 -- File upload parsing
+- **[Starlette](https://www.starlette.io/)** >= 1.0 — ASGI foundation
+- **[Pydantic](https://docs.pydantic.dev/)** >= 2.12 — Validation and schemas
+- **[structlog](https://www.structlog.org/)** >= 25.0 — Structured logging
+- **[httpx](https://www.python-httpx.org/)** >= 0.28 — Async HTTP client
+- **[python-multipart](https://github.com/Kludex/python-multipart)** >= 0.0.20 — File upload parsing
 - LLM SDKs: [anthropic](https://github.com/anthropics/anthropic-sdk-python) >= 0.89, [openai](https://github.com/openai/openai-python) >= 2.30, [google-genai](https://github.com/googleapis/python-genai) >= 1.70
 
-Everything else (OpenTelemetry, Prometheus, MCP) is optional and degrades gracefully to a no-op when absent.
+Everything else (OpenTelemetry, Prometheus, MCP) is optional and degrades gracefully when absent.
 
 ---
 
@@ -795,20 +870,22 @@ Everything else (OpenTelemetry, Prometheus, MCP) is optional and degrades gracef
 Full documentation lives at [`docs/`](./docs/) and is published with MkDocs:
 
 ```bash
-make docs    # Live-reloading docs at http://127.0.0.1:8001
+mkdocs serve -a 127.0.0.1:8001   # Live-reloading docs
 ```
 
-- **[Getting Started](./docs/getting-started/)** -- Installation, quick start, all 27 examples
-- **[Guides](./docs/guides/)** -- Architecture, typed intents, DI, safety policies, streaming, memory, eval harness, observability, and more
-- **[API Reference](./docs/api/)** -- Every public class and function
-- **[Internals](./docs/internals/)** -- Module reference, extending the framework, implementation notes
+- **[Getting Started](./docs/getting-started/)** — Installation, quick start, all 32 examples
+- **[Guides](./docs/guides/)** — Architecture, typed intents, DI, safety policies, streaming, memory, eval harness, observability, and more
+- **[API Reference](./docs/api/)** — Every public class and function
+- **[Internals](./docs/internals/)** — Module reference, extending the framework, implementation notes
 
 ### Where everything lives
 
 | File | Purpose |
 |---|---|
 | [`PROJECT.md`](./PROJECT.md) | Stable product vision, design principles, architecture pillars |
-| [`CLAUDE.md`](./CLAUDE.md) | Developer guide -- commands, conventions, module map |
+| [`CLAUDE.md`](./CLAUDE.md) | Developer guide — commands, conventions, module map |
+| [`ROADMAP.md`](./ROADMAP.md) | Living status — shipped / active / deferred tables |
+| [`VISION.md`](./VISION.md) | Speculative forward tracks (Trust, Flywheel) |
 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) | Contributor onboarding |
 
 ---
@@ -817,8 +894,8 @@ make docs    # Live-reloading docs at http://127.0.0.1:8001
 
 Contributions are very welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, code conventions, and the PR workflow. If you're not sure where to start, a new example app or an improvement to an existing one is always a great first PR.
 
-Found a bug or have an idea? [Open an issue](https://github.com/shibuiwilliam/AgenticAPI/issues) -- we'd love to hear from you.
+Found a bug or have an idea? [Open an issue](https://github.com/shibuiwilliam/AgenticAPI/issues) — we'd love to hear from you.
 
 ## License
 
-[MIT](./LICENSE)
+[Apache 2.0](./LICENSE)

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from agenticapi.exceptions import CodeGenerationError
-from agenticapi.runtime.llm.base import LLMChunk, LLMPrompt, LLMResponse, LLMUsage, ToolCall
+from agenticapi.runtime.llm.base import LLMChunk, LLMMessage, LLMPrompt, LLMResponse, LLMUsage, ToolCall
 from agenticapi.runtime.llm.retry import RetryConfig, with_retry
 
 if TYPE_CHECKING:
@@ -179,8 +179,38 @@ class GeminiBackend:
         for msg in prompt.messages:
             if msg.role == "system":
                 continue
-            role = "model" if msg.role == "assistant" else "user"
-            contents.append(types.Content(role=role, parts=[types.Part(text=msg.content)]))
+            if msg.role == "assistant" and msg.tool_calls:
+                # Gemini represents tool calls as function_call Parts
+                # on a model message.
+                parts: list[Any] = []
+                if msg.content:
+                    parts.append(types.Part(text=msg.content))
+                for tc in msg.tool_calls:
+                    parts.append(types.Part(function_call=types.FunctionCall(name=tc.name, args=tc.arguments)))
+                contents.append(types.Content(role="model", parts=parts))
+            elif msg.role == "tool":
+                # Gemini expects tool results as user messages with
+                # function_response Parts.  The ``name`` field must be
+                # the *function name* (e.g. "get_weather"), not the
+                # provider-assigned call ID.  Look it up from the
+                # preceding assistant message's tool_calls list.
+                tool_name = self._resolve_tool_name(prompt.messages, msg)
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part(
+                                function_response=types.FunctionResponse(
+                                    name=tool_name,
+                                    response={"result": msg.content},
+                                )
+                            )
+                        ],
+                    )
+                )
+            else:
+                role = "model" if msg.role == "assistant" else "user"
+                contents.append(types.Content(role=role, parts=[types.Part(text=msg.content)]))
 
         return config, contents
 
@@ -239,6 +269,27 @@ class GeminiBackend:
         if tool_choice == "none":
             return types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode="NONE"))  # type: ignore[arg-type]
         return None
+
+    @staticmethod
+    def _resolve_tool_name(messages: list[LLMMessage], tool_msg: LLMMessage) -> str:
+        """Resolve the function name for a tool-result message.
+
+        Gemini's ``FunctionResponse.name`` must be the actual function
+        name (e.g. ``"get_weather"``), not the provider-assigned call
+        ID.  This helper walks *backward* through the conversation to
+        find the assistant message whose ``tool_calls`` list contains a
+        ``ToolCall`` with a matching ``id``.
+
+        Falls back to ``tool_call_id`` (which may still be a name in
+        some use-cases) or ``"tool_result"`` if no match is found.
+        """
+        if tool_msg.tool_call_id:
+            for prior in reversed(messages):
+                if prior.role == "assistant" and prior.tool_calls:
+                    for tc in prior.tool_calls:
+                        if tc.id == tool_msg.tool_call_id:
+                            return tc.name
+        return tool_msg.tool_call_id or "tool_result"
 
     def _build_response(self, response: Any) -> LLMResponse:
         """Build an LLMResponse from a Gemini response object.

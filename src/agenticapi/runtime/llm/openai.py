@@ -144,14 +144,54 @@ class OpenAIBackend:
     def _build_request_kwargs(self, prompt: LLMPrompt) -> dict[str, Any]:
         """Build keyword arguments for the OpenAI API call.
 
+        Translates the framework's generic message and tool formats
+        into the OpenAI-specific wire format:
+
+        - Tool definitions are wrapped in ``{"type": "function",
+          "function": {...}}``.
+        - Assistant messages with ``tool_calls`` include a ``tool_calls``
+          array of ``{"id", "type", "function": {"name", "arguments"}}``
+          objects.
+        - Tool-result messages (``role="tool"``) include ``tool_call_id``.
+
         Args:
             prompt: The LLM prompt to convert.
 
         Returns:
             Dictionary of keyword arguments for chat.completions.create().
         """
-        messages: list[dict[str, str]] = [{"role": "developer", "content": prompt.system}]
-        messages.extend({"role": msg.role, "content": msg.content} for msg in prompt.messages if msg.role != "system")
+        messages: list[dict[str, Any]] = [{"role": "developer", "content": prompt.system}]
+        for msg in prompt.messages:
+            if msg.role == "system":
+                continue
+            if msg.role == "assistant" and msg.tool_calls:
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": msg.content or None,
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": json.dumps(tc.arguments),
+                                },
+                            }
+                            for tc in msg.tool_calls
+                        ],
+                    }
+                )
+            elif msg.role == "tool" and msg.tool_call_id:
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": msg.tool_call_id,
+                        "content": msg.content,
+                    }
+                )
+            else:
+                messages.append({"role": msg.role, "content": msg.content})
 
         kwargs: dict[str, Any] = {
             "model": self._model,
@@ -161,12 +201,31 @@ class OpenAIBackend:
         }
 
         if prompt.tools:
-            kwargs["tools"] = prompt.tools
+            kwargs["tools"] = [self._normalize_tool(t) for t in prompt.tools]
 
         if prompt.tool_choice is not None and prompt.tools:
             kwargs["tool_choice"] = prompt.tool_choice
 
         return kwargs
+
+    @staticmethod
+    def _normalize_tool(t: dict[str, Any]) -> dict[str, Any]:
+        """Normalize a tool definition to OpenAI format.
+
+        Accepts both the framework's generic format
+        (``{"name", "description", "parameters"}``) and the already-
+        wrapped OpenAI format (``{"type": "function", "function": {...}}``).
+        """
+        if t.get("type") == "function" and "function" in t:
+            return t
+        return {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "parameters": t.get("parameters", t.get("input_schema", {})),
+            },
+        }
 
     def _build_response(self, completion: Any) -> LLMResponse:
         """Build an LLMResponse from an OpenAI completion object.

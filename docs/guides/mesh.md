@@ -79,5 +79,5 @@ async def pipeline(intent, mesh_ctx):
 ## Reference
 
 - Source: `src/agenticapi/mesh/mesh.py`, `src/agenticapi/mesh/context.py`
-- Example: `examples/24_multi_agent_pipeline/`
+- Example: `examples/27_multi_agent_pipeline/`
 - Public API: `AgentMesh`, `MeshContext`, `MeshCycleError`

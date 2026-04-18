@@ -141,13 +141,59 @@ class AnthropicBackend:
     def _build_request_kwargs(self, prompt: LLMPrompt) -> dict[str, Any]:
         """Build keyword arguments for the Anthropic API call.
 
+        Translates the framework's generic message and tool formats
+        into the Anthropic-specific wire format:
+
+        - Tool definitions use ``input_schema`` (not ``parameters``).
+        - Assistant messages with ``tool_calls`` become content blocks
+          containing ``tool_use`` entries.
+        - Tool-result messages (``role="tool"``) become ``user``
+          messages with ``tool_result`` content blocks keyed by
+          ``tool_use_id``.
+
         Args:
             prompt: The LLM prompt to convert.
 
         Returns:
             Dictionary of keyword arguments for messages.create().
         """
-        messages = [{"role": msg.role, "content": msg.content} for msg in prompt.messages if msg.role != "system"]
+        messages: list[dict[str, Any]] = []
+        for msg in prompt.messages:
+            if msg.role == "system":
+                continue
+            if msg.role == "assistant" and msg.tool_calls:
+                # Anthropic expects tool_use content blocks on assistant
+                # messages that requested tool calls.
+                blocks: list[dict[str, Any]] = []
+                if msg.content:
+                    blocks.append({"type": "text", "text": msg.content})
+                for tc in msg.tool_calls:
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc.id,
+                            "name": tc.name,
+                            "input": tc.arguments,
+                        }
+                    )
+                messages.append({"role": "assistant", "content": blocks})
+            elif msg.role == "tool" and msg.tool_call_id:
+                # Anthropic expects tool results as user messages with
+                # tool_result content blocks.
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": msg.tool_call_id,
+                                "content": msg.content,
+                            }
+                        ],
+                    }
+                )
+            else:
+                messages.append({"role": msg.role, "content": msg.content})
 
         kwargs: dict[str, Any] = {
             "model": self._model,
@@ -158,7 +204,7 @@ class AnthropicBackend:
         }
 
         if prompt.tools:
-            kwargs["tools"] = prompt.tools
+            kwargs["tools"] = [self._normalize_tool(t) for t in prompt.tools]
 
         if prompt.tool_choice is not None and prompt.tools:
             if isinstance(prompt.tool_choice, dict):
@@ -172,6 +218,21 @@ class AnthropicBackend:
                 kwargs.pop("tools", None)
 
         return kwargs
+
+    @staticmethod
+    def _normalize_tool(t: dict[str, Any]) -> dict[str, Any]:
+        """Normalize a tool definition to Anthropic format.
+
+        Accepts the framework's generic format (``"parameters"`` key),
+        the Anthropic format (``"input_schema"`` key), or both.
+        Always produces ``{"name", "description", "input_schema"}``.
+        When both keys are present, ``input_schema`` takes precedence.
+        """
+        return {
+            "name": t["name"],
+            "description": t.get("description", ""),
+            "input_schema": t.get("input_schema", t.get("parameters", {})),
+        }
 
     def _build_response(self, message: Any) -> LLMResponse:
         """Build an LLMResponse from an Anthropic message object.

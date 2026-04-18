@@ -18,12 +18,26 @@ class LLMMessage:
     """A single message in an LLM conversation.
 
     Attributes:
-        role: The role of the message sender ("system", "user", or "assistant").
+        role: The role of the message sender ("system", "user",
+            "assistant", or "tool").
         content: The text content of the message.
+        tool_call_id: Provider-supplied identifier linking a ``role="tool"``
+            result message back to the originating tool call.  Required by
+            OpenAI, used by Anthropic for ``tool_result`` blocks.  ``None``
+            for non-tool messages.
+        tool_calls: Tool-call requests that the LLM emitted on an
+            ``role="assistant"`` message.  Stored so that backends can
+            reconstruct the full multi-turn conversation in the
+            provider's native format (Anthropic ``tool_use`` content
+            blocks, OpenAI ``tool_calls`` array, Gemini
+            ``function_call`` parts).  ``None`` for non-assistant or
+            text-only assistant messages.
     """
 
     role: str
     content: str
+    tool_call_id: str | None = None
+    tool_calls: list[ToolCall] | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -26,6 +26,10 @@ from agenticapi.interface.stream import (
     ThoughtEvent,
     ToolCallCompletedEvent,
     ToolCallStartedEvent,
+    ToolResultEvent,
+    WorkflowCheckpointEvent,
+    WorkflowStepCompleteEvent,
+    WorkflowStepStartEvent,
 )
 from agenticapi.interface.stream_store import InMemoryStreamStore, StreamStore
 from agenticapi.interface.tasks import AgentTasks
@@ -60,6 +64,10 @@ __all__ = [
     "ThoughtEvent",
     "ToolCallCompletedEvent",
     "ToolCallStartedEvent",
+    "ToolResultEvent",
     "UploadFile",
     "UploadedFiles",
+    "WorkflowCheckpointEvent",
+    "WorkflowStepCompleteEvent",
+    "WorkflowStepStartEvent",
 ]

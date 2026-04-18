@@ -122,3 +122,138 @@ Reference: `examples/27_multi_agent_pipeline/app.py`, `src/agenticapi/mesh/mesh.
 4. Errors inherit from `agenticapi.AgenticAPIError`.
 
 Reference: `extensions/agenticapi-claude-agent-sdk/`.
+
+---
+
+## Using the Agentic Loop
+
+The multi-turn agentic loop (`runtime/loop.py`) makes endpoints genuinely agentic — the LLM autonomously decides which tools to call and reasons over their results.
+
+1. Register tools via `ToolRegistry` or `@tool`.
+2. Configure the app with `llm=`, `harness=`, `tools=`.
+3. Optionally set `loop_config=LoopConfig(max_iterations=5)` on the endpoint.
+4. The loop runs automatically when the LLM returns tool calls.
+
+```python
+from agenticapi import AgenticApp, tool, LoopConfig
+
+@tool(description="Get weather data")
+async def get_weather(city: str) -> dict:
+    return {"temp": 22, "rain": 80}
+
+app = AgenticApp(harness=harness, llm=backend, tools=registry)
+
+@app.agent_endpoint(name="advisor", loop_config=LoopConfig(max_iterations=5))
+async def advisor(intent, context):
+    return {}  # fallback — loop handles tool dispatch
+```
+
+For standalone use outside of endpoints:
+
+```python
+from agenticapi import run_agentic_loop, LoopConfig
+
+result = await run_agentic_loop(
+    llm=backend, tools=registry, harness=harness,
+    prompt=prompt, config=LoopConfig(max_iterations=10),
+)
+print(result.final_text, result.tool_calls_made)
+```
+
+Reference: `src/agenticapi/runtime/loop.py`, `examples/29_agentic_loop/app.py`.
+
+---
+
+## Building Workflow-Based Agents
+
+The workflow engine (`workflow/`) lets you define multi-step agent processes with typed state, conditional branching, and checkpoint pauses.
+
+1. Subclass `WorkflowState` with typed fields.
+2. Create an `AgentWorkflow[MyState]` and register steps with `@workflow.step()`.
+3. Each step returns the next step name (str), parallel steps (list[str]), or None to end.
+4. Attach to an endpoint: `@app.agent_endpoint(workflow=my_workflow)`.
+
+```python
+from agenticapi import AgentWorkflow, WorkflowState, WorkflowContext
+
+class MyState(WorkflowState):
+    data: str = ""
+
+workflow = AgentWorkflow(name="pipeline", state_class=MyState)
+
+@workflow.step("start")
+async def start(state: MyState, ctx: WorkflowContext) -> str:
+    state.data = await ctx.call_tool("fetch_data", query="test")
+    return "analyze"
+
+@workflow.step("analyze")
+async def analyze(state: MyState, ctx: WorkflowContext) -> None:
+    state.data += " — analyzed"
+    return None  # workflow complete
+
+@app.agent_endpoint(name="process", workflow=workflow)
+async def handler(intent, context):
+    return {}  # fallback
+```
+
+Reference: `src/agenticapi/workflow/`, `examples/30_agent_workflow/app.py`.
+
+---
+
+## Using the Agent Playground
+
+The playground provides a self-hosted debugger UI at `/_playground`.
+
+1. Enable: `AgenticApp(playground_url="/_playground")`.
+2. Open `http://localhost:8000/_playground` in a browser.
+3. Select an endpoint, type an intent, and see the response + trace.
+
+The playground is disabled by default. It requires no external dependencies — the UI is vanilla HTML/JS/CSS served inline.
+
+Reference: `src/agenticapi/playground/routes.py`.
+
+---
+
+## Using the Trace Inspector
+
+The trace inspector provides a self-hosted UI for searching, diffing,
+and exporting execution traces.
+
+1. Enable: `AgenticApp(harness=harness, trace_url="/_trace")`.
+2. Open `http://localhost:8000/_trace` in a browser.
+3. Search traces by endpoint, status, tool, date, cost.
+4. Click a trace ID to see the full timeline.
+5. Use the Diff tab to compare two traces side-by-side.
+6. Use the Stats tab for cost breakdown by endpoint and tool.
+7. Export traces as JSON compliance reports.
+
+Requires a `HarnessEngine` with an `AuditRecorder` to have data.
+Disabled by default. No external dependencies.
+
+Reference: `src/agenticapi/trace_inspector/routes.py`.
+
+---
+
+## Exposing Tools via Harness-Governed MCP
+
+`HarnessMCPServer` exposes registered `@tool` functions as MCP tools
+with full harness governance. Every tool call from an external AI
+assistant goes through `HarnessEngine.call_tool()`.
+
+```python
+from agenticapi.mcp_tools import HarnessMCPServer
+
+app = AgenticApp(harness=harness, tools=registry)
+HarnessMCPServer(app, path="/mcp/tools")
+```
+
+1. Register tools in a `ToolRegistry`.
+2. Configure a `HarnessEngine` with policies.
+3. Create `HarnessMCPServer(app, path="/mcp/tools")`.
+4. Test: `npx @modelcontextprotocol/inspector http://localhost:8000/mcp/tools`.
+
+Requires `pip install agentharnessapi[mcp]`. Unlike `expose_as_mcp()`
+(which exposes agent endpoints as MCP tools), `HarnessMCPServer`
+exposes the registered `@tool` functions themselves.
+
+Reference: `src/agenticapi/mcp_tools/server.py`, `examples/32_harness_mcp_tools/app.py`.

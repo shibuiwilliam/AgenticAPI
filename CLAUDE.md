@@ -6,8 +6,8 @@ AgenticAPI is a Python OSS framework that natively integrates coding agents into
 
 **In a nutshell**: FastAPI is for type-safe REST APIs. AgenticAPI is for harnessed agent APIs.
 
-**Current status** (as of Increment 9, 2026-04-12). Core: **118 Python
-modules, ~21,944 LOC, 1,304 collected tests, 27 examples, 75 public
+**Current status** (as of Increment 12, 2026-04-18). Core: **141 Python
+modules, ~26,725 LOC, 1,526 collected tests, 33 examples, 86 public
 exports**. Extensions: `agentharnessapi[claude-agent-sdk]` (~1,610 src
 LOC, 38 tests). **Phase A (control plane) is complete.** **Phase D
 (typed handlers + DI) core is complete** including schema-driven OpenAPI
@@ -241,6 +241,17 @@ See [docs/internals/modules.md](docs/internals/modules.md) for the complete modu
 | `MeshContext` / `MeshCycleError` | `mesh/context.py` | Request-scoped inter-role call context with cycle detection + budget propagation |
 | `RetryConfig` / `with_retry` | `runtime/llm/retry.py` | Exponential-backoff retry wrapper for transient LLM provider errors |
 | Observability | `observability/tracing.py`, `metrics.py`, `propagation.py`, `semconv.py` | OpenTelemetry spans + metrics + traceparent (A1/A2/A5, no-op without OTel) |
+| `LoopConfig` / `LoopResult` / `ToolCallRecord` | `runtime/loop.py` | Multi-turn agentic loop configuration, result, and per-tool-call record |
+| `run_agentic_loop` | `runtime/loop.py` | Execute the ReAct pattern: LLM → tool calls → feed results → repeat until final answer |
+| `AgentWorkflow[S]` | `workflow/engine.py` | Declarative multi-step workflow with `@step()` decorator, conditional routing, parallel execution |
+| `WorkflowState` | `workflow/state.py` | Pydantic base class for typed workflow state that flows between steps |
+| `WorkflowContext` | `workflow/engine.py` | Step context with `call_tool()`, `llm_generate()`, `budget_remaining_usd` |
+| `WorkflowResult[S]` | `workflow/engine.py` | Workflow completion result with final state, steps executed, checkpoint info |
+| `WorkflowStore` / `InMemoryWorkflowStore` / `SqliteWorkflowStore` | `workflow/store.py` | Checkpoint persistence for paused workflows |
+| `ToolResultEvent` | `interface/stream.py` | Streaming event emitted when a tool completes within the agentic loop |
+| `WorkflowStepStartEvent` / `WorkflowStepCompleteEvent` / `WorkflowCheckpointEvent` | `interface/stream.py` | Streaming events for workflow step lifecycle |
+| `HarnessMCPServer` | `mcp_tools/server.py` | Expose `@tool` functions as MCP tools with full harness governance (`pip install agentharnessapi[mcp]`) |
+| Trace Inspector | `trace_inspector/routes.py` | Self-hosted trace inspection UI with search, diff, stats, export at `/_trace` |
 
 ### Custom Response Types
 
@@ -451,6 +462,13 @@ See [examples/README.md](examples/README.md) for the full examples guide.
 | `24_multi_agent_pipeline` | None | `AgentMesh`, `@mesh.role`, `@mesh.orchestrator`, `MeshContext.call()` |
 | `25_harness_playground` | None | Full harness with autonomy, safety, streaming |
 | `26_dynamic_pipeline` | None | `DynamicPipeline`, per-request stage selection |
+| `27_multi_agent_pipeline` | None | `AgentMesh`, `@mesh.role`, `@mesh.orchestrator`, `MeshContext.call()` |
+| `28_sessions_and_tasks` | None | Multi-turn sessions, `AgentTasks`, all 4 auth schemes |
+| `29_agentic_loop` | None | Multi-turn ReAct loop: `run_agentic_loop()`, `LoopConfig`, `MockBackend` with 3-tool weather advisor |
+| `30_agent_workflow` | None | `AgentWorkflow`, `WorkflowState`, conditional branching, checkpoints, `workflow=` parameter |
+| `31_sandbox_and_guards` | None | Defence-in-depth code execution: static analysis, sandbox, monitors, validators |
+| `32_harness_mcp_tools` | None | `HarnessMCPServer`, `@tool`, `CodePolicy`, `DataPolicy`, `PIIPolicy` — harness-governed MCP |
+| `33_trace_inspector` | None | Trace Inspector (`/_trace`), Playground (`/_playground`), `SqliteAuditRecorder`, `HarnessEngine.call_tool()` auditing |
 
 ---
 
@@ -631,6 +649,40 @@ Extensions live under `extensions/<package-name>/` with their own `pyproject.tom
 5. Errors should inherit from `agenticapi.AgenticAPIError` so callers can catch both core and extension errors uniformly.
 6. Reference: `src/agenticapi/ext/claude_agent_sdk/` and `docs/internals/extensions.md`.
 
+### Enabling the Trace Inspector
+
+The trace inspector provides a self-hosted UI for searching, diffing,
+and exporting execution traces. Zero external dependencies.
+
+```python
+app = AgenticApp(
+    harness=HarnessEngine(...),
+    trace_url="/_trace",   # enables the trace inspector
+)
+```
+
+Routes: `/_trace` (UI), `/_trace/api/search`, `/_trace/api/traces/{id}`,
+`/_trace/api/diff?a={id1}&b={id2}`, `/_trace/api/stats`,
+`/_trace/api/export/{id}`.
+
+Reference: `src/agenticapi/trace_inspector/routes.py`.
+
+### Exposing Tools via Harness-Governed MCP
+
+`HarnessMCPServer` exposes registered `@tool` functions as MCP tools
+with full harness governance (policies, audit, budget):
+
+```python
+from agenticapi.mcp_tools import HarnessMCPServer
+
+app = AgenticApp(harness=harness, tools=registry)
+HarnessMCPServer(app, path="/mcp/tools")
+```
+
+Every tool call from an AI assistant goes through
+`HarnessEngine.call_tool()`. Requires `pip install agentharnessapi[mcp]`.
+Reference: `examples/32_harness_mcp_tools/app.py`.
+
 ## Forward Tracks — Implementation Guide
 
 Three forward tracks are defined in [`VISION.md`](VISION.md). This
@@ -737,82 +789,92 @@ Scopes: `interface`, `harness`, `runtime`, `application`, `ops`, `cli`, `testing
 
 ---
 
-## Implementation Blueprints
+## Shipped Enhancements
 
-File-level task specs for the three immediate strategic priorities
-identified in [`PROJECT.md`](PROJECT.md) > Immediate Strategic Priorities.
-Each task is designed to be picked up by a single Claude Code session
-using the per-task prompt template below.
+Six strategic elements are shipped and form part of the core framework.
 
-### Element 1: Native Function Calling (E8)
+### Element 1: Multi-Turn Agentic Loop (SHIPPED)
 
-**Task E8-A: Anthropic `tool_use` round-trip.**
-File: `src/agenticapi/runtime/llm/anthropic.py`. Parse `ToolUseBlock`
-from `message.content` into `ToolCall` objects on `LLMResponse`. Set
-`finish_reason = "tool_calls"` when `stop_reason == "tool_use"`.
-Add retry (3x with jitter) for `RateLimitError`, `APITimeoutError`.
-Tests: `tests/unit/runtime/llm/test_anthropic_tool_calls.py`.
+Files: `src/agenticapi/runtime/loop.py`, wired in `app.py::_run_agentic_loop()`.
+Tests: `tests/unit/runtime/test_agentic_loop.py` (17 tests).
+Example: `examples/29_agentic_loop/app.py`.
 
-**Task E8-B: OpenAI `tool_calls` round-trip.**
-File: `src/agenticapi/runtime/llm/openai.py`. Parse
-`response.choices[0].message.tool_calls` into `ToolCall` objects.
-Pass `finish_reason` from `choices[0].finish_reason`.
-Add retry for `RateLimitError`, `APITimeoutError`.
-Tests: `tests/unit/runtime/llm/test_openai_tool_calls.py`.
+The agentic loop implements the ReAct pattern: LLM calls tools
+autonomously, inspects results, and reasons to a final answer. Every
+tool call goes through `HarnessEngine.call_tool()` with policy
+evaluation and audit recording. Budget tracking across iterations.
+Configurable via `LoopConfig(max_iterations=N)` per endpoint.
 
-**Task E8-C: Gemini `function_calling` round-trip.**
-File: `src/agenticapi/runtime/llm/gemini.py`. Build
-`function_declarations` from `prompt.tools`. Parse
-`part.function_call` from `response.candidates[0].content.parts`.
-Add retry for `ResourceExhausted`, `ServiceUnavailable`.
-Tests: `tests/unit/runtime/llm/test_gemini_tool_calls.py`.
+### Element 2: Agent Workflow Engine (SHIPPED)
 
-**Task E8-D: `tool_choice` on `LLMPrompt`.**
-File: `src/agenticapi/runtime/llm/base.py`. Add `tool_choice: str |
-dict[str, str] | None = None` to `LLMPrompt`. Update `MockBackend`
-to honour `tool_choice="required"`.
+Files: `src/agenticapi/workflow/` (state.py, engine.py, store.py).
+Tests: `tests/unit/workflow/test_workflow_engine.py` (24 tests).
+Example: `examples/30_agent_workflow/app.py`.
 
-**Task E8-E: Integration tests (gated on env vars).**
-Files: `tests/integration/llm/test_real_{anthropic,openai,gemini}.py`.
-Each sends a prompt with one tool, asserts `tool_calls` is non-empty.
-Gated with `@pytest.mark.skipif(not os.environ.get("..._API_KEY"))`.
+Declarative multi-step workflows with typed state (`WorkflowState`),
+conditional branching, parallel execution, checkpoints, retry, and
+timeout enforcement. Wired into `AgenticApp` via
+`@app.agent_endpoint(workflow=my_workflow)`. Persistence via
+`WorkflowStore` protocol with `InMemoryWorkflowStore` and
+`SqliteWorkflowStore`.
 
-**Task E8-F: Update examples 03/04/05.**
-Add a handler in each LLM example that exercises tool-first dispatch
-with a real provider. Falls back to direct-handler mode without a key.
+### Element 3: Agent Playground UI (SHIPPED)
 
-**Task RETRY-1: Retry wrapper.**
-File: `src/agenticapi/runtime/llm/retry.py`. `RetryConfig` dataclass
-+ `with_retry(fn, config)` async wrapper. Each backend's constructor
-accepts `retry: RetryConfig`. Tests: `tests/unit/runtime/llm/test_retry.py`.
+Files: `src/agenticapi/playground/` (routes.py).
+Tests: `tests/unit/playground/test_playground.py` (10 tests).
 
-### Element 2: Multi-Agent Mesh (remote transport)
+Self-hosted, zero-dependency agent debugger at `/_playground`.
+Three-panel layout: Agent Chat | Execution Trace | Trace History.
+Enabled via `AgenticApp(playground_url="/_playground")`.
+
+### Element 4: Production-Ready Provider Integration (SHIPPED)
+
+Files: `src/agenticapi/runtime/llm/{anthropic,openai,gemini}.py`,
+`src/agenticapi/runtime/llm/base.py` (LLMMessage extension),
+`src/agenticapi/runtime/loop.py` (conversation building).
+Tests: `tests/unit/runtime/llm/test_{anthropic,openai,gemini}_tool_format.py`,
+`tests/unit/runtime/llm/test_llm_message_ext.py`,
+`tests/integration/llm/test_real_{anthropic,openai,gemini}.py`.
+
+Fixed tool definition format translation for all three backends.
+`LLMMessage` now carries `tool_call_id` and `tool_calls` fields for
+multi-turn conversation fidelity. Each backend's
+`_build_request_kwargs()` translates messages with tool calls into
+provider-native content blocks (Anthropic `tool_use`/`tool_result`,
+OpenAI `tool_calls`/`tool_call_id`, Gemini `function_call`/
+`function_response`). Integration tests verify end-to-end tool
+calling with real APIs (gated by env vars).
+
+### Element 5: Agent Trace Inspector (SHIPPED)
+
+Files: `src/agenticapi/trace_inspector/` (routes.py).
+Tests: `tests/unit/trace_inspector/test_trace_inspector.py` (18 tests).
+
+Self-hosted trace inspection UI at `/_trace` with search (by
+endpoint, status, tool, date, cost), side-by-side diff, per-tool
+cost analytics, and JSON compliance export. HTML-escaped output.
+Enabled via `AgenticApp(trace_url="/_trace")`.
+
+### Element 6: Harness-Governed MCP Tool Server (SHIPPED)
+
+Files: `src/agenticapi/mcp_tools/` (server.py).
+Tests: `tests/unit/mcp_tools/test_harness_mcp.py` (6 tests).
+Example: `examples/32_harness_mcp_tools/app.py`.
+
+`HarnessMCPServer` exposes `@tool` functions as MCP tools with full
+harness governance. Every MCP tool call goes through
+`HarnessEngine.call_tool()` with policy evaluation and audit
+recording. Requires `pip install agentharnessapi[mcp]`.
+
+### Next Implementation Priorities
 
 **Task MESH-HTTP: `HttpTransport` for remote mesh peers.**
-File: `src/agenticapi/mesh/transport.py`. `HttpTransport(peers={...})`
-that calls another AgenticAPI instance with `traceparent` + delegation
-headers. Falls back to `LocalTransport` (already shipped).
+File: `src/agenticapi/mesh/transport.py`. Enable `MeshContext.call()`
+across HTTP services with `traceparent` + budget headers.
 
-**Task MESH-BUDGET: Cross-agent `BudgetScope` propagation.**
-File: `src/agenticapi/harness/policy/budget_policy.py`. Add
-`BudgetScope(parent, key, limit_usd)` so sub-agent costs debit the
-parent's shared wallet. Tests: budget exhaustion across 2 hops.
-
-**Task MESH-APPROVAL: Approval bubbling.**
-File: `src/agenticapi/interface/approval_registry.py`. Sub-agent
-`request_approval()` resolves against the parent's ticket so the
-operator sees one item, not N.
-
-### Element 3: Init Templates
-
-**Task INIT-CHAT: `--template chat` variant.**
-Generates an app with `AgentStream` + `streaming="sse"` +
-`AutonomyPolicy` with one `EscalateWhen` rule. Handler emits
-`thought`, `partial`, `final` events.
-
-**Task INIT-TOOLS: `--template tool-calling` variant.**
-Generates an app with 3 `@tool` functions, uses the tool-first
-path, falls back to `MockBackend` with pre-queued responses.
+**Task TRUST-1: Hardened trust model.**
+See `VISION.md` > Track 2 for gVisor sandbox, secret substitution,
+code attestation, and `production=True` mode.
 
 ### Per-task prompt template for Claude Code
 

@@ -1,6 +1,6 @@
 # Examples
 
-Twenty-three example applications demonstrate different features, LLM backends, and extensions. See [`examples/README.md`](https://github.com/shibuiwilliam/AgenticAPI/blob/main/examples/README.md) in the repository for the full curl walkthrough of every endpoint.
+Thirty-two example applications demonstrate different features, LLM backends, and extensions. See [`examples/README.md`](https://github.com/shibuiwilliam/AgenticAPI/blob/main/examples/README.md) in the repository for the full curl walkthrough of every endpoint.
 
 ## 01 — Hello Agent (no LLM)
 
@@ -538,51 +538,114 @@ custom `EvalJudge`, and a self-evaluating endpoint.
 
 ---
 
-### Example 24 — Code Cache
+### Example 24 — Code Cache (no LLM)
 
 Demonstrates how `InMemoryCodeCache` skips the LLM entirely when an identical intent already has an approved answer.
 
 ```bash
-uvicorn examples.24_code_cache.app:app --reload
+agenticapi dev --app examples.24_code_cache.app:app
 ```
 
 **Demonstrates:** `CodeCache`, `InMemoryCodeCache`, `CachedCode`, cache hit/miss metrics.
 
 ---
 
-### Example 24 — Multi-Agent Pipeline
-
-Demonstrates `AgentMesh` with multiple specialized roles composed by an orchestrator.
-
-```bash
-uvicorn examples.24_multi_agent_pipeline.app:app --reload
-```
-
-**Demonstrates:** `AgentMesh`, `@mesh.role`, `@mesh.orchestrator`, `MeshContext.call()`, cycle detection, budget propagation.
-
----
-
-### Example 25 — Harness Playground
+### Example 25 — Harness Playground (no LLM)
 
 Full interactive harness demo with autonomy levels, safety policies, and streaming.
 
 ```bash
-uvicorn examples.25_harness_playground.app:app --reload
+agenticapi dev --app examples.25_harness_playground.app:app
 ```
 
 **Demonstrates:** Full harness pipeline composition with `PromptInjectionPolicy`, `PIIPolicy`, `AutonomyPolicy`, streaming, and audit.
 
 ---
 
-### Example 26 — Dynamic Pipeline
+### Example 26 — Dynamic Pipeline (no LLM)
 
 Demonstrates `DynamicPipeline` with per-request stage selection.
 
 ```bash
-uvicorn examples.26_dynamic_pipeline.app:app --reload
+agenticapi dev --app examples.26_dynamic_pipeline.app:app
 ```
 
 **Demonstrates:** `DynamicPipeline`, `PipelineStage`, runtime stage composition.
+
+---
+
+### Example 27 — Multi-Agent Pipeline (no LLM)
+
+Demonstrates `AgentMesh` with a 3-role research pipeline: researcher, summariser, and reviewer, composed by an orchestrator with budget propagation.
+
+```bash
+agenticapi dev --app examples.27_multi_agent_pipeline.app:app
+```
+
+```bash
+curl -X POST http://localhost:8000/agent/research_pipeline \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "quantum computing"}'
+```
+
+**Demonstrates:** `AgentMesh`, `@mesh.role`, `@mesh.orchestrator`, `MeshContext.call()`, cycle detection, budget propagation, trace linkage.
+
+## 29 Agentic Loop
+
+A weather advisor that uses the **multi-turn agentic loop** (ReAct pattern) to autonomously call tools and reason to a final answer.
+
+```bash
+agenticapi dev --app examples.29_agentic_loop.app:app
+
+curl -X POST http://127.0.0.1:8000/agent/advisor \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Should I go out in Tokyo today?"}'
+```
+
+The LLM calls `get_weather("Tokyo")`, sees 80% rain, calls `get_clothing_advice(22, True)`, then produces a reasoned recommendation. All three tool calls go through the harness with policy evaluation and audit recording.
+
+**Demonstrates:** `run_agentic_loop()`, `LoopConfig`, `MockBackend` with pre-queued multi-turn responses, `HarnessEngine` tool governance, autonomous tool selection.
+
+## 30 Agent Workflow
+
+A document analysis pipeline using the **declarative workflow engine** with typed state, conditional branching, and checkpoint pauses.
+
+```bash
+agenticapi dev --app examples.30_agent_workflow.app:app
+
+curl -X POST http://127.0.0.1:8000/agent/analyze \
+    -H "Content-Type: application/json" \
+    -d '{"intent": "Analyze this quarterly report"}'
+```
+
+The workflow executes: parse -> analyze -> assess_risk -> report. If risk is "high", it pauses at a checkpoint for human review. The `workflow=` parameter on `@agent_endpoint` wires the workflow engine directly into the request lifecycle.
+
+**Demonstrates:** `AgentWorkflow`, `WorkflowState`, `@workflow.step()`, conditional branching, `WorkflowContext.call_tool()`, `checkpoint=True`, `to_mermaid()`, `@app.agent_endpoint(workflow=...)`.
+
+## 31 — Sandbox and Guards (no LLM)
+
+Defence-in-depth code execution with six guard layers: static AST analysis, forbidden imports, sandbox isolation, resource monitors, output validators, and audit trail.
+
+```bash
+agenticapi dev --app examples.31_sandbox_and_guards.app:app
+```
+
+**Demonstrates:** `ProcessSandbox`, `CodePolicy`, `RuntimePolicy`, `ResourcePolicy`, static analysis, `OutputTypeValidator`, `ReadOnlyValidator`, six-layer guard configuration.
+
+## 32 — Harness MCP Tools (no LLM)
+
+Expose `@tool` functions as MCP tools with full harness governance.
+Every tool call from Claude Code or Cursor goes through policy
+evaluation, PII scanning, and audit recording.
+
+```bash
+pip install agentharnessapi[mcp]
+agenticapi dev --app examples.32_harness_mcp_tools.app:app
+# Test with MCP inspector:
+npx @modelcontextprotocol/inspector http://localhost:8000/mcp/tools
+```
+
+**Demonstrates:** `HarnessMCPServer`, `@tool`, `CodePolicy`, `DataPolicy`, `PIIPolicy`, harness-governed MCP tool dispatch, audit trail for MCP calls.
 
 ## Common Patterns
 
@@ -595,7 +658,7 @@ LLM-powered examples (03, 04, 05, and 06/07 when `AGENTICAPI_LLM_PROVIDER` is se
 intent -> LLM code generation -> policy check -> static analysis -> sandbox -> response
 ```
 
-Non-LLM examples (01, 02, 08-26) invoke handlers directly:
+Non-LLM examples (01, 02, 08-32) invoke handlers directly:
 ```
 intent -> keyword parsing -> handler function -> response
 ```

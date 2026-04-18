@@ -322,6 +322,10 @@ class TestToolFirstEndToEnd:
         backend = MockBackend()
         backend.add_response('{"action":"read","domain":"user","parameters":{},"confidence":0.9}')
         backend.add_tool_call_response(ToolCall(id="c1", name="get_user", arguments={"user_id": 42}))
+        # Agentic loop needs a final text response after dispatching
+        # the tool call (the LLM sees the tool result and produces
+        # its final answer).
+        backend.add_response("User alice found with id 42.")
 
         harness = HarnessEngine(policies=[CodePolicy()])
         app = AgenticApp(title="e4-e2e", harness=harness, llm=backend, tools=registry)
@@ -334,12 +338,14 @@ class TestToolFirstEndToEnd:
         r = client.post("/agent/user", json={"intent": "get user 42"})
         assert r.status_code == 200
         body = r.json()
-        assert body["result"] == {"id": 42, "name": "alice"}
+        # The agentic loop returns the LLM's final text, not the raw
+        # tool output.
+        assert body["result"] == "User alice found with id 42."
         # No code generation prompt should have been produced —
-        # the tool-first path bypasses CodeGenerator entirely.
+        # the agentic loop bypasses CodeGenerator entirely.
         assert app._code_generator is None
 
-        # Audit trace present + marked as tool-first.
+        # Audit trace present from the harness tool dispatch.
         records = harness.audit_recorder.get_records()
         assert len(records) == 1
         assert records[0].generated_code.startswith("# tool-first call: get_user")

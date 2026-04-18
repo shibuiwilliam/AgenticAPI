@@ -1,6 +1,6 @@
 # Module Reference — Complete Source Inventory
 
-118 Python modules in `src/agenticapi/` organized by subpackage.
+129 Python modules in `src/agenticapi/` (~26,631 LOC) organized by subpackage.
 
 ---
 
@@ -103,6 +103,7 @@
 | `code_generator.py` | LLM-based code generation |
 | `code_cache.py` | `InMemoryCodeCache` with LRU + TTL |
 | `context.py` | `AgentContext` (request-scoped: tools, session, auth_user, memory) |
+| `loop.py` | `run_agentic_loop()`, `run_agentic_loop_streaming()`, `LoopConfig`, `LoopResult`, `ToolCallRecord` — multi-turn ReAct pattern |
 
 ### `runtime/llm/`
 
@@ -145,6 +146,36 @@
 | `mesh.py` | `AgentMesh` with `@mesh.role`, `@mesh.orchestrator`, trace linkage, cycle detection |
 | `context.py` | `MeshContext` for inter-agent calls with budget propagation |
 
+## `workflow/` — Multi-Step Agent Workflows
+
+| File | Purpose |
+|---|---|
+| `__init__.py` | Package exports: `AgentWorkflow`, `WorkflowState`, `WorkflowResult`, `WorkflowContext`, `StepConfig`, `WorkflowStore`, `InMemoryWorkflowStore`, `SqliteWorkflowStore` |
+| `state.py` | `WorkflowState` — Pydantic base for typed workflow state |
+| `engine.py` | `AgentWorkflow[S]` generic engine with `@step()` decorator, conditional routing, parallel execution, checkpoints, retry, Mermaid export |
+| `store.py` | `WorkflowStore` protocol, `InMemoryWorkflowStore`, `SqliteWorkflowStore` — checkpoint persistence |
+
+## `playground/` — Agent Debugger UI
+
+| File | Purpose |
+|---|---|
+| `__init__.py` | `mount_playground()` — auto-mount on `AgenticApp` |
+| `routes.py` | Backend API routes (`/api/endpoints`, `/api/traces`, `/api/chat`) + inline HTML/JS/CSS frontend |
+
+## `trace_inspector/` — Trace Inspection UI
+
+| File | Purpose |
+|---|---|
+| `__init__.py` | `mount_trace_inspector()` — auto-mount on `AgenticApp` |
+| `routes.py` | Backend API routes (search, detail, diff, stats, export) + inline HTML/JS/CSS frontend with XSS-escaped output |
+
+## `mcp_tools/` — Harness-Governed MCP Server
+
+| File | Purpose |
+|---|---|
+| `__init__.py` | `HarnessMCPServer` public API |
+| `server.py` | `HarnessMCPServer` — exposes `@tool` functions as MCP tools via `HarnessEngine.call_tool()` with policy evaluation and audit recording |
+
 ## `evaluation/` — Continuous Assurance
 
 | File | Purpose |
@@ -183,3 +214,19 @@
 ## `testing/` — Test Utilities
 
 `agent_test_case.py`, `mocks.py`, `assertions.py`, `fixtures.py`, `benchmark.py`
+
+## `ext/` — In-Tree Extension Packages
+
+The Claude Agent SDK extension is vendored under `ext/claude_agent_sdk/` for tighter integration testing while also being published as an independent package under `extensions/agenticapi-claude-agent-sdk/`.
+
+| File | Purpose |
+|---|---|
+| `__init__.py` | Public API surface |
+| `_imports.py` | Lazy import helpers |
+| `backend.py` | Claude Agent SDK backend adapter |
+| `exceptions.py` | Extension-specific exceptions |
+| `messages.py` | Message type conversions |
+| `options.py` | Runner configuration |
+| `permissions.py` | Permission management |
+| `runner.py` | `ClaudeAgentRunner` — the main entry point |
+| `tools.py` | Tool bridge between AgenticAPI and Claude SDK |

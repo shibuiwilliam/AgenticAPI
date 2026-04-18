@@ -10,6 +10,13 @@
 
 ::: agenticapi.runtime.llm.base.LLMMessage
 
+`LLMMessage` carries two optional fields for multi-turn tool conversations:
+
+- **`tool_call_id: str | None`** — on `role="tool"` messages, links back to the originating tool call. Required by OpenAI, used by Anthropic for `tool_result` blocks.
+- **`tool_calls: list[ToolCall] | None`** — on `role="assistant"` messages, preserves the full tool call structure so backends can reconstruct provider-native multi-turn formats.
+
+Both fields default to `None` for backward compatibility.
+
 ::: agenticapi.runtime.llm.base.LLMResponse
 
 `LLMResponse` carries two fields that drive native function calling:
@@ -17,7 +24,7 @@
 - **`tool_calls: list[ToolCall]`** — structured function-call requests returned by the model. Empty for plain text completions.
 - **`finish_reason: str | None`** — why generation stopped. Typical values: `"stop"`, `"length"`, `"tool_calls"`, `"content_filter"`. `None` for backends that don't report it.
 
-The protocol supports these fields across all backends. In the current implementation, `MockBackend` fully exercises them; the built-in provider adapters are still partial and mostly return text-first responses.
+All four backends (Anthropic, OpenAI, Gemini, Mock) fully populate these fields. Each real backend parses its provider's native response format into `ToolCall` objects and maps stop reasons to normalized `finish_reason` values.
 
 ::: agenticapi.runtime.llm.base.ToolCall
 
@@ -40,6 +47,10 @@ The protocol supports these fields across all backends. In the current implement
 ## MockBackend
 
 ::: agenticapi.runtime.llm.mock.MockBackend
+
+## RetryConfig
+
+::: agenticapi.runtime.llm.retry.RetryConfig
 
 ## CodeGenerator
 

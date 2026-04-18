@@ -19,7 +19,7 @@ async def greeter(intent: Intent, context: AgentContext) -> AgentResponse:
 ```
 
 ```bash
-uvicorn myapp:app --reload
+agenticapi dev --app myapp:app
 # Swagger UI at http://127.0.0.1:8000/docs
 ```
 
@@ -28,7 +28,7 @@ uvicorn myapp:app --reload
 - **Intent-based endpoints** — Natural language in, structured results out
 - **Typed intents** — Schema-aware `Intent[T]` parsing with validation and OpenAPI publication
 - **Dynamic code generation** — LLMs generate Python code on the fly
-- **Native function calling** — `ToolCall` types and a tool-first execution path, fully exercised by `MockBackend` and custom backends
+- **Native function calling** — `ToolCall` + `tool_choice` + `finish_reason` across all four backends (Anthropic, OpenAI, Gemini, Mock) with automatic retry
 - **Harness engineering** — Policies, static analysis, sandbox, audit trails
 - **Persistent audit** — In-memory for dev or `SqliteAuditRecorder` for production
 - **Cost budgeting** — `BudgetPolicy` and `PricingRegistry` primitives for LLM spend ceilings
@@ -46,7 +46,16 @@ uvicorn myapp:app --reload
 - **Approval workflows** — Human-in-the-loop for sensitive operations
 - **ASGI-native** — Built on Starlette, runs on uvicorn
 
-**Current scale:** 118 Python modules, ~21,944 lines of code, **1,310 tests** (+38 in extensions), 27 examples, 1 extension.
+- **Multi-agent orchestration** — `AgentMesh` with `@mesh.role` / `@mesh.orchestrator`, budget propagation, cycle detection
+- **Agentic loop** — Multi-turn ReAct pattern where the LLM autonomously calls tools and reasons to a final answer, all harness-governed
+- **Workflow engine** — Declarative multi-step workflows with typed state, conditional branching, parallel execution, checkpoints
+- **Agent playground** — Self-hosted debugger UI at `/_playground` for chatting with agents and inspecting execution traces
+- **Trace inspector** — Self-hosted trace inspection UI at `/_trace` with search, diff, cost analytics, and compliance export
+- **Harness-governed MCP** — `HarnessMCPServer` exposes `@tool` functions as MCP tools with full policy enforcement, audit, and budget tracking
+- **Multi-turn tool conversations** — `LLMMessage` carries `tool_call_id` and `tool_calls` for provider-native multi-turn format translation across Anthropic, OpenAI, and Gemini
+- **Project scaffolding** — `agenticapi init` generates a ready-to-run project with tools, harness, and eval set
+
+**Current scale:** 141 Python modules, ~26,725 lines of code, **1,507 tests** (+38 in extensions), 32 examples, 1 extension.
 
 For the full shipped / active / deferred / superseded status matrix see `ROADMAP.md` at the repo root. For speculative forward tracks (Agent Mesh, Hardened Trust, Self-Improving Flywheel) see `VISION.md` at the repo root.
 
@@ -56,7 +65,7 @@ For the full shipped / active / deferred / superseded status matrix see `ROADMAP
 
 - [Installation](getting-started/installation.md)
 - [Quick Start](getting-started/quickstart.md)
-- [Examples](getting-started/examples.md) — 27 runnable apps from hello-world to multi-agent pipelines
+- [Examples](getting-started/examples.md) — 32 runnable apps from hello-world to agentic workflows
 
 **Core guides**
 
@@ -72,7 +81,7 @@ For the full shipped / active / deferred / superseded status matrix see `ROADMAP
 - [Streaming](guides/streaming.md) / [Agent Memory](guides/memory.md)
 - [Eval Harness](guides/eval-harness.md) / [Safety Policies](guides/safety-policies.md)
 - [Approval Workflows](guides/approval.md) / [Sessions](guides/sessions.md)
-- [REST Compatibility](guides/rest-compat.md) / [Agent-to-Agent](guides/a2a.md)
+- [Agent Mesh](guides/mesh.md) / [REST Compatibility](guides/rest-compat.md) / [Agent-to-Agent](guides/a2a.md)
 - [Ops Agents](guides/ops-agents.md)
 - [OpenAPI & Swagger](guides/openapi.md)
 - [Testing](guides/testing.md)

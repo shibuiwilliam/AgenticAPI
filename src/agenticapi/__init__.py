@@ -61,6 +61,7 @@ from agenticapi.mesh import AgentMesh, MeshContext
 from agenticapi.routing import AgentRouter
 from agenticapi.runtime.code_cache import CachedCode, CodeCache, InMemoryCodeCache
 from agenticapi.runtime.context import AgentContext
+from agenticapi.runtime.loop import LoopConfig, LoopResult, ToolCallRecord, run_agentic_loop
 from agenticapi.runtime.memory import (
     InMemoryMemoryStore,
     MemoryKind,
@@ -79,11 +80,27 @@ from agenticapi.security import (
     HTTPBearer,
 )
 from agenticapi.types import AutonomyLevel, Severity, TraceLevel
+from agenticapi.workflow import (
+    AgentWorkflow,
+    InMemoryWorkflowStore,
+    SqliteWorkflowStore,
+    StepConfig,
+    WorkflowContext,
+    WorkflowResult,
+    WorkflowState,
+    WorkflowStore,
+)
 
 try:
     from agenticapi._version import __version__
 except ModuleNotFoundError:  # editable install without build
     __version__ = "0.0.0.dev0"
+
+# Optional: HarnessMCPServer requires ``pip install agentharnessapi[mcp]``.
+import contextlib
+
+with contextlib.suppress(ImportError):
+    from agenticapi.mcp_tools import HarnessMCPServer
 
 __all__ = [
     "APIKeyHeader",
@@ -95,6 +112,7 @@ __all__ = [
     "AgentRouter",
     "AgentStream",
     "AgentTasks",
+    "AgentWorkflow",
     "AgenticAPIError",
     "AgenticApp",
     "ApprovalDenied",
@@ -127,14 +145,18 @@ __all__ = [
     "HTTPBearer",
     "HarnessEngine",
     "HarnessError",
+    "HarnessMCPServer",
     "HtmxHeaders",
     "InMemoryCodeCache",
     "InMemoryMemoryStore",
+    "InMemoryWorkflowStore",
     "Intent",
     "IntentAction",
     "IntentParseError",
     "IntentParser",
     "IntentScope",
+    "LoopConfig",
+    "LoopResult",
     "MemoryKind",
     "MemoryRecord",
     "MemoryStore",
@@ -151,12 +173,20 @@ __all__ = [
     "SessionError",
     "Severity",
     "SqliteMemoryStore",
+    "SqliteWorkflowStore",
+    "StepConfig",
+    "ToolCallRecord",
     "ToolError",
     "TraceLevel",
     "UploadFile",
     "UploadedFiles",
+    "WorkflowContext",
+    "WorkflowResult",
+    "WorkflowState",
+    "WorkflowStore",
     "__version__",
     "htmx_response_headers",
     "redact_pii",
+    "run_agentic_loop",
     "tool",
 ]

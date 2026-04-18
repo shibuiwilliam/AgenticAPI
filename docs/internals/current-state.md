@@ -223,15 +223,17 @@ If you need to understand the implementation quickly, read in this order:
 - Keep streaming transports backward compatible once emitted event shapes are documented.
 - Keep the Claude Agent SDK integration as a separate extension package rather than folding it into core.
 
-## Scale (Increment 9)
+## Scale (Increment 12)
 
-- **118 Python modules**, ~21,944 lines of code
-- **1,310 tests** (+38 in extensions), 27 examples, 73 `__all__` exports
+- **141 Python modules**, ~26,725 lines of code
+- **1,507 tests** (+38 in extensions), 32 examples, 86 `__all__` exports
 - Phase A (control plane): complete
 - Phase D (DX core): complete (Depends, Intent[T], response_model, @tool, route deps)
-- Phase E (native function calling): core shipped
-- Phase F (streaming): core complete -- AgentStream, SSE + NDJSON transports, approval pause/resume, AutonomyPolicy, StreamStore replay
-- Phase B (safety): partial -- B5 PromptInjectionPolicy, B6 PIIPolicy shipped
+- Phase E (native function calling): complete — provider-specific tool format translation for Anthropic, OpenAI, Gemini; multi-turn `LLMMessage` with `tool_call_id` / `tool_calls`; integration tests with real APIs
+- Phase F (streaming): core complete — AgentStream, SSE + NDJSON transports, approval pause/resume, AutonomyPolicy, StreamStore replay
+- Phase B (safety): partial — B5 PromptInjectionPolicy, B6 PIIPolicy shipped
+- Trace inspector: shipped — `/_trace` with search, diff, stats, export
+- Harness MCP server: shipped — `HarnessMCPServer` exposing `@tool` functions with governance
 - Phase C (agent intelligence): partial -- C1 MemoryStore, C5 CodeCache, C6 EvalHarness shipped
 - Multi-agent: `AgentMesh` with `@mesh.role` / `@mesh.orchestrator`, `MeshContext.call()` with cycle detection and budget propagation
 

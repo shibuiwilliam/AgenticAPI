@@ -16,15 +16,16 @@ Technical references for contributors and Claude Code sessions. **Not** user-fac
 
 | Metric | Value |
 |---|---|
-| Python modules in `src/agenticapi/` | 118 |
-| Lines of code | ~21,944 |
-| Tests collected (excl. benchmarks) | 1,310 |
-| Example apps | 27 |
-| Public API symbols (`__all__`) | 73 |
+| Python modules in `src/agenticapi/` | 141 (128 core + 13 in-tree extension) |
+| Lines of code | ~26,725 |
+| Tests collected (excl. benchmarks) | 1,507 |
+| Example apps | 32 |
+| Public API symbols (`__all__`) | 86 |
 | Policy classes | 11 (Code, Data, Resource, Runtime, Budget, Autonomy, PromptInjection, PII + base, evaluator, pricing) |
-| LLM backends | 4 (Anthropic, OpenAI, Gemini, Mock) |
-| CLI subcommands | 6 (dev, console, replay, eval, init, version) |
+| LLM backends | 4 (Anthropic, OpenAI, Gemini, Mock) — all with native function calling, multi-turn tool conversations, + retry |
+| CLI subcommands | 7 (dev, console, replay, eval, init, version, bump) |
 | Extension packages | 1 (`agenticapi-claude-agent-sdk`) |
+| Core subsystems | Agentic Loop (ReAct), Workflow Engine, Playground UI, Trace Inspector, Harness MCP Server |
 
 ## Relationship to Other Documents
 

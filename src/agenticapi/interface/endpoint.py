@@ -19,7 +19,9 @@ if TYPE_CHECKING:
     from agenticapi.harness.policy.autonomy_policy import AutonomyPolicy
     from agenticapi.harness.policy.base import Policy
     from agenticapi.interface.intent import IntentScope
+    from agenticapi.runtime.loop import LoopConfig
     from agenticapi.security import Authenticator
+    from agenticapi.workflow.engine import AgentWorkflow
 
 
 @dataclass(slots=True)
@@ -82,3 +84,5 @@ class AgentEndpointDef:
     dependencies: list[Dependency] = field(default_factory=list)
     streaming: str | None = None
     autonomy: AutonomyPolicy | None = None
+    loop_config: LoopConfig | None = None
+    workflow: AgentWorkflow[Any] | None = None

@@ -38,8 +38,10 @@ Layer 4: Runtime (execution infrastructure)
 Layer 5: Application + Orchestration
     application/pipeline.py — DynamicPipeline
     mesh/ — AgentMesh, MeshContext
+    workflow/ — AgentWorkflow, WorkflowState, WorkflowStore
     evaluation/ — EvalSet, EvalRunner, judges
     observability/ — tracing, metrics, propagation, semconv
+    playground/ — /_playground backend + UI
     ops/ — OpsAgent base (scaffolding)
     cli/ — dev, console, replay, eval, init, version
     testing/ — fixtures, mocks, assertions, benchmarks
@@ -77,7 +79,10 @@ Every request enters through `AgenticApp._handle_agent_request()` (app.py) and f
    (b) CODE-GENERATION PATH (LLM + harness + autonomy_level != "manual"):
        → BudgetPolicy.estimate_and_enforce (pre-call)
        → CodeCache lookup → if hit, skip LLM
-       → CodeGenerator.generate(intent, tools) → generated Python code
+       → CodeGenerator.generate(intent, tools) → LLM call with retry (RetryConfig)
+         → LLMPrompt carries tool_choice ("auto"/"required"/"none"/specific)
+         → On transient error (429, 5xx, timeout): exponential backoff + jitter
+         → result: generated Python code or ToolCall objects
        → PolicyEvaluator.evaluate(code=generated_code) → all policies
        → StaticAnalysis.check_code_safety(code) → AST walker
        → ApprovalCheck → if required, raise ApprovalRequired (202)
@@ -87,14 +92,30 @@ Every request enters through `AgenticApp._handle_agent_request()` (app.py) and f
        → AuditRecorder.record(trace)
        → return AgentResponse
 
-   (c) TOOL-FIRST PATH (E4: LLM picks a single tool):
-       → LLMResponse.tool_calls has exactly one entry
-       → HarnessEngine.call_tool(tool, arguments)
-           → PolicyEvaluator.evaluate_tool_call(tool_name, args)
-           → Tool.invoke(**args) → result
-       → return AgentResponse (skips sandbox entirely — faster, cheaper)
+   (c) AGENTIC LOOP PATH (LLM + harness + tools registered):
+       → run_agentic_loop() — multi-turn ReAct pattern
+       → Iteration: LLM.generate(prompt with tools)
+         → if finish_reason="tool_calls":
+             for each ToolCall:
+               → HarnessEngine.call_tool(tool, arguments) — policy + audit
+               → Append tool result as LLMMessage(role="tool") to conversation
+             → Send updated conversation back to LLM
+         → if finish_reason="stop" or max_iterations:
+             → Return LoopResult(final_text, tool_calls_made, iterations)
+       → BudgetPolicy tracked per LLM call (estimate + reconcile)
+       → OTEL span per iteration
+       → Falls back to code-generation path (b) on failure
 
-   (d) STREAMING PATH (handler has AgentStream param):
+   (d) WORKFLOW PATH (endpoint has workflow= configured):
+       → AgentWorkflow.run(state, context, harness, tools)
+       → Steps execute sequentially: step_func(state, WorkflowContext) → next_step_name
+       → Conditional branching: step returns str (next step) or list[str] (parallel)
+       → Checkpoints: step with checkpoint=True pauses workflow, returns partial state
+       → Resume: POST /agent/{name}?workflow_id=xxx loads state and continues
+       → WorkflowContext.call_tool() goes through HarnessEngine.call_tool()
+       → return WorkflowResult wrapped in AgentResponse
+
+   (e) STREAMING PATH (handler has AgentStream param):
        → AgentStream injected via DI scanner
        → Handler yields events lazily: ThoughtEvent, PartialEvent, etc.
        → Transport selected: SSE (F2) or NDJSON (F3)
@@ -133,6 +154,25 @@ Built-in injectable types (detected by annotation, no `Depends()` needed):
 - `MeshContext` → `InjectionKind.MESH_CONTEXT` (for mesh orchestrators)
 
 Legacy positional fallback: unannotated `(intent, context)` handlers are detected and filled positionally.
+
+---
+
+## LLM Retry and Native Function Calling
+
+All four LLM backends support native function calling and transient-error retry:
+
+**Retry** (`runtime/llm/retry.py`): `RetryConfig` + `with_retry()` async wrapper. Each backend constructs a default `RetryConfig` targeting its provider's transient exceptions:
+- Anthropic: `RateLimitError`, `APITimeoutError`, `InternalServerError`
+- OpenAI: `RateLimitError`, `APITimeoutError`
+- Gemini: `ResourceExhausted`, `ServiceUnavailable`
+
+Backoff: exponential with configurable jitter, base delay, max delay, and max retries.
+
+**Native function calling**: Every real backend (not just `MockBackend`) now:
+1. Converts `LLMPrompt.tools` into the provider's native format.
+2. Maps `LLMPrompt.tool_choice` (`"auto"` / `"required"` / `"none"` / `{"type": "tool", "name": "..."}`) into provider-specific API parameters.
+3. Parses provider responses into `ToolCall(id, name, arguments)` objects on `LLMResponse.tool_calls`.
+4. Maps provider stop reasons to a normalized `LLMResponse.finish_reason` (`"stop"`, `"tool_calls"`, `"length"`, `"content_filter"`).
 
 ---
 
@@ -175,3 +215,160 @@ Transport selection is automatic based on the `Accept` header:
 Five built-in judges: `ExactMatchJudge`, `ContainsJudge`, `PydanticSchemaJudge`, `LatencyJudge`, `CostJudge`. Custom judges implement the `EvalJudge` protocol.
 
 CLI: `agenticapi eval --set evals/golden.yaml --app app:app --format text|json`
+
+---
+
+## Agentic Loop (ReAct Pattern)
+
+`runtime/loop.py` implements the multi-turn tool-calling loop that makes AgenticAPI genuinely agentic. The loop supersedes the single-shot E4 tool-first path.
+
+**Core flow:**
+
+```
+run_agentic_loop(llm, tools, harness, prompt, config) → LoopResult
+
+  for iteration in 1..max_iterations:
+    response = llm.generate(prompt_with_tools)
+    if no tool_calls → return final_text
+    for each tool_call:
+      result = harness.call_tool(tool, args)   # policy + audit
+      append LLMMessage(role="tool", content=result) to conversation
+    send updated conversation back to LLM
+```
+
+**Key design decisions:**
+- Every tool call goes through `HarnessEngine.call_tool()` — no shortcuts.
+- Budget tracking per LLM call via `BudgetPolicy.estimate_and_enforce()` / `record_actual()`.
+- Unknown tools get an error message appended as a tool result, letting the LLM recover.
+- Tool failures raise `ToolError`; policy violations raise `PolicyViolation` — both halt the loop.
+- Streaming variant `run_agentic_loop_streaming()` emits `ToolCallStartedEvent`, `ToolResultEvent`, `ThoughtEvent`, `FinalEvent` through `AgentStream`.
+- `LoopConfig(max_iterations=N)` is configurable per endpoint via `@app.agent_endpoint(loop_config=...)`.
+- The loop is wired into `AgenticApp._run_agentic_loop()` which is called from `_execute_with_harness()` when tools are registered.
+
+---
+
+## Workflow Engine
+
+`workflow/` implements declarative multi-step agent workflows with typed state.
+
+**Architecture:**
+
+```
+AgentWorkflow[S](name, state_class)
+  @workflow.step("name", checkpoint=False, max_retries=0)
+  async def step(state: S, context: WorkflowContext) -> str | list[str] | None:
+      ...  # return next step name, parallel list, or None to end
+
+  workflow.run(initial_state, context, harness, tools, llm) → WorkflowResult[S]
+```
+
+**Key components:**
+- `WorkflowState` — Pydantic `BaseModel` subclass carrying typed fields. The framework manages `wf_current_step`, `wf_completed_steps`, `wf_iteration_count`.
+- `AgentWorkflow[S]` — Generic workflow with `@step()` decorator for registering steps.
+- `WorkflowContext` — Provides `call_tool()`, `llm_generate()`, `trace_id`, `budget_remaining_usd` to step functions.
+- `WorkflowResult[S]` — Final state, steps executed, duration, checkpoint info.
+- `WorkflowStore` — Protocol for persisting checkpoint state. `InMemoryWorkflowStore` and `SqliteWorkflowStore` shipped.
+
+**Routing logic:**
+- Step returns `str` → sequential: execute the named step next.
+- Step returns `list[str]` → parallel: `asyncio.gather()` all named steps.
+- Step returns `None` → workflow complete.
+- Step with `checkpoint=True` → persist state, return paused result.
+
+**App integration:** `@app.agent_endpoint(workflow=my_workflow)` bypasses the handler and runs the workflow engine via `_execute_workflow()`.
+
+---
+
+## Agent Playground
+
+`playground/` provides a self-hosted, zero-dependency agent debugger UI at `/_playground`.
+
+**Backend API (playground/routes.py):**
+- `GET /_playground/api/endpoints` — list registered endpoints with metadata (tools, policies, auth, streaming, loop config).
+- `GET /_playground/api/traces` — list recent traces from `AuditRecorder`.
+- `GET /_playground/api/traces/{id}` — single trace with timeline.
+- `POST /_playground/api/chat` — dispatch to agent via `app.process_intent()`.
+- `GET /_playground` — serve the HTML/JS/CSS UI.
+
+**Frontend (inline HTML, no build step):**
+- Three-panel layout: Agent Chat | Execution Trace | Trace History.
+- Chat uses `fetch()` to POST to `/api/chat`, renders responses.
+- Trace History lists recent traces; click loads detail into the trace viewer.
+- Timeline renders events with color-coded border (green=pass, red=error, purple=tool, blue=LLM).
+- Dark theme, monospace, responsive.
+
+**Mounting:** `AgenticApp(playground_url="/_playground")`. Disabled by default (`None`). Routes are stored in `app._playground_routes` and included in `_build_starlette()`.
+
+---
+
+## Trace Inspector
+
+`trace_inspector/` provides a self-hosted trace inspection UI at `/_trace` for searching, diffing, and exporting execution traces.
+
+**Backend API (trace_inspector/routes.py):**
+- `GET /_trace/api/search` — search traces with filters (endpoint, status, tool, date range, cost range). Returns paginated summaries.
+- `GET /_trace/api/traces/{id}` — full trace detail with timeline.
+- `GET /_trace/api/diff?a={id}&b={id}` — structural diff of two traces. Reports changed fields.
+- `GET /_trace/api/stats` — aggregate cost/status/tool statistics across traces.
+- `GET /_trace/api/export/{id}` — JSON compliance report with `Content-Disposition: attachment`.
+- `GET /_trace` — serve the HTML/JS/CSS UI.
+
+**Frontend (inline HTML, no build step):**
+- Four-tab layout: Search | Detail | Diff | Stats.
+- Search: filter bar + results table with status/cost/duration columns.
+- Detail: timeline waterfall with color-coded entries, LLM usage, export button.
+- Diff: side-by-side comparison of two traces.
+- Stats: card grid with total traces, cost, per-endpoint and per-tool breakdown.
+- All user-controlled data HTML-escaped via `esc()` to prevent XSS.
+
+**Data model:** `_trace_to_summary()` extracts tool names from `stream_events` and `mcp:` endpoint prefixes. `_aggregate_stats()` produces `by_endpoint`, `by_status`, and `by_tool` breakdowns.
+
+**Mounting:** `AgenticApp(trace_url="/_trace")`. Disabled by default. Routes stored in `app._trace_inspector_routes`.
+
+---
+
+## Harness-Governed MCP Tool Server
+
+`mcp_tools/` exposes registered `@tool` functions as MCP tools with full harness governance.
+
+**HarnessMCPServer (mcp_tools/server.py):**
+- Iterates `app._tools.get_definitions()` to build MCP tool list.
+- For each tool call from an MCP client: `HarnessEngine.call_tool()` with policy evaluation, audit recording, and JSON result serialization.
+- Mounted as an ASGI sub-app via `starlette.routing.Mount` with lifespan management for `FastMCP.SessionManager`.
+- Requires `pip install agentharnessapi[mcp]`.
+
+**Audit integration:** Tool calls use endpoint_name `"mcp:{tool_name}"` so traces are distinguishable from normal endpoint requests. The trace inspector's tool filter can find MCP-originated calls.
+
+**Mounting:** `HarnessMCPServer(app, path="/mcp/tools")` — called by the application, not by the framework constructor. This is explicit so apps that don't use MCP pay nothing.
+
+---
+
+## Provider Tool Format Translation
+
+Each LLM backend translates between the framework's generic tool format and the provider's native wire format. This is handled in `_build_request_kwargs()` (or `_build_request_params()` for Gemini).
+
+**Generic format (from `_tools_to_llm_format()` in loop.py):**
+```json
+{"name": "calc", "description": "...", "parameters": {"type": "object", ...}}
+```
+
+**Anthropic translation (`_normalize_tool()`):**
+- `parameters` → `input_schema`
+- Assistant messages with `tool_calls` → content blocks with `tool_use` entries
+- Tool result messages → `user` role with `tool_result` content blocks keyed by `tool_use_id`
+
+**OpenAI translation (`_normalize_tool()`):**
+- Wraps in `{"type": "function", "function": {"name", "description", "parameters"}}`
+- Assistant messages with `tool_calls` → `tool_calls` array with `function` objects (arguments JSON-encoded)
+- Tool result messages → `tool` role with `tool_call_id`
+
+**Gemini translation (`_convert_tools()`, `_resolve_tool_name()`):**
+- Produces `FunctionDeclaration` objects
+- Assistant messages with `tool_calls` → `function_call` parts on `model` messages
+- Tool result messages → `function_response` parts on `user` messages; `_resolve_tool_name()` walks backward through the conversation to find the actual function name (not the call ID)
+
+**Multi-turn message model:** `LLMMessage` carries two optional fields:
+- `tool_call_id: str | None` — on `role="tool"` messages, links back to the originating tool call
+- `tool_calls: list[ToolCall] | None` — on `role="assistant"` messages, preserves the full tool call structure for provider-specific formatting
+
+Both the sync (`run_agentic_loop`) and streaming (`run_agentic_loop_streaming`) variants populate these fields.

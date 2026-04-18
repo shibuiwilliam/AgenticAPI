@@ -4,10 +4,11 @@
 
 The live repository currently contains:
 
-- `65` core test files under `tests/`
-- `1,016` collected core tests
-- `20` example apps exercised by the E2E suite
-- `6` extension test files and `38` extension tests for `agenticapi-claude-agent-sdk`
+- `112+` test files under `tests/`
+- `1,507` collected core tests (excluding benchmarks)
+- `32` example apps exercised by the E2E suite
+- `6` real-provider integration tests (API key gated)
+- `38` extension tests for `agenticapi-claude-agent-sdk`
 
 ## Directory Structure
 

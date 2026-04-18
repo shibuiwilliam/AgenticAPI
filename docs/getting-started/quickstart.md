@@ -18,7 +18,7 @@ async def order_agent(intent: Intent, context: AgentContext) -> AgentResponse:
 Run it:
 
 ```bash
-uvicorn myapp:app --reload
+agenticapi dev --app myapp:app
 ```
 
 Test it:
@@ -199,7 +199,7 @@ print(response.reasoning)
 
 ## Next Steps
 
-- [Examples](examples.md) — Twenty example apps from hello-world to streaming release control
+- [Examples](examples.md) — 32 example apps from hello-world to harness-governed MCP tools
 - [Architecture](../guides/architecture.md) — How the layers connect
 - [Typed Intents](../guides/typed-intents.md) — `Intent[T]` with Pydantic validation
 - [Dependency Injection](../guides/dependency-injection.md) — `Depends()` for handlers

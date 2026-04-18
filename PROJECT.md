@@ -398,73 +398,95 @@ a new category of framework.
 
 ---
 
-## Immediate Strategic Priorities
+## Shipped Strategic Elements
 
-Three elements — identified by independent architect review at Increment 8
-— must ship before the longer-term forward tracks become relevant. They
-compose: Element 1 makes individual agents production-ready, Element 2 lets
-you compose them, Element 3 gets developers to the point where they can try
-both in five minutes. Implementation blueprints are in [`CLAUDE.md`](CLAUDE.md)
-> Implementation Blueprints.
+Six elements — three from the original architecture review and three from
+a follow-up production-readiness review — have shipped and now form part
+of the framework's core offering.
 
-### Element 1: Native Function Calling for Real LLM Providers
+### Element 1: Multi-Turn Agentic Loop (SHIPPED)
 
-**Severity: CRITICAL — blocks 90%+ of production use cases.**
+The framework includes a built-in **ReAct loop** (`runtime/loop.py`)
+where the LLM autonomously decides which tools to call, inspects
+intermediate results, and produces a final reasoned answer. Every tool
+call is harness-governed: policy-checked, audit-recorded, budget-tracked.
 
-AgenticAPI defines `ToolCall` types, has a tool-first execution path (E4),
-and `MockBackend` fully supports function calling. But the three real
-backends (Anthropic, OpenAI, Gemini) do not yet parse provider-native
-`tool_use` / `tool_calls` / `function_call` response blocks into `ToolCall`
-objects. This means the E4 tool-first path — the framework's most
-innovative execution path — only works with `MockBackend`.
+Key types: `run_agentic_loop()`, `LoopConfig`, `LoopResult`, `ToolCallRecord`.
+Wired into `AgenticApp` via `_run_agentic_loop()`.
+Streaming variant: `run_agentic_loop_streaming()` with `ToolResultEvent`.
 
-**What the fix requires** (per provider): parse tool-use blocks from the
-response into `ToolCall` objects, set `finish_reason` correctly, add
-`tool_choice` parameter support, add retry with exponential backoff for
-transient failures, add integration tests gated behind env vars.
+### Element 2: Agent Workflow Engine (SHIPPED)
 
-| Framework | Native function calling | Status |
-|---|---|---|
-| LangChain | All major providers | Production |
-| CrewAI | Anthropic + OpenAI | Production |
-| **AgenticAPI** | MockBackend only | **Blocked for real providers** |
+A **declarative workflow engine** (`workflow/`) for multi-step agent
+processes with typed state, conditional branching, parallel execution,
+and checkpoint pauses.
 
-### Element 2: Multi-Agent Orchestration with Real Execution
+Key types: `AgentWorkflow[S]`, `WorkflowState`, `WorkflowResult`,
+`WorkflowContext`, `StepConfig`, `WorkflowStore`.
+Wired into `AgenticApp` via `@app.agent_endpoint(workflow=my_workflow)`.
 
-**Severity: HIGH — blocks enterprise workflow use cases.**
+### Element 3: Agent Playground & Trace Debugger UI (SHIPPED)
 
-The `AgentMesh` primitive and `MeshContext.call` are now shipped
-(Increment 9+). The remaining work is: HTTP transport for remote mesh
-peers, cross-agent budget propagation with parent/child scope linkage,
-approval bubbling so sub-agent escalations resolve with one operator
-click, and mesh-aware OTEL semconv.
+A **self-hosted agent debugger** at `/_playground` — a zero-dependency
+web UI where developers can chat with agents, visualize execution traces,
+and browse trace history.
 
-The substrate is ready: `BudgetPolicy` (A4), `ApprovalRegistry` (F5),
-`AgentStream` (F1), `traceparent` (A5), `DI scanner` (D1), `Intent[T]`
-(D4) are all shipped. The mesh is mechanical glue on top of these.
+Enabled via `AgenticApp(playground_url="/_playground")`.
 
-### Element 3: Developer Onboarding — `agenticapi init` + Starter Templates
+### Element 4: Production-Ready Provider Integration (SHIPPED)
 
-**Severity: HIGH — blocks community adoption velocity.**
+All three LLM backends now correctly translate between the framework's
+generic tool format and each provider's native wire format:
 
-The `agenticapi init` CLI command is now shipped. The remaining work is:
-additional starter templates (`--template chat`, `--template rag`,
-`--template tool-calling`) that generate domain-specific projects with
-pre-wired streaming, tools, and eval sets.
+- **Anthropic:** `parameters` → `input_schema`; assistant tool calls →
+  `tool_use` content blocks; tool results → `tool_result` blocks with
+  `tool_use_id`.
+- **OpenAI:** tools wrapped in `{"type": "function", "function": {...}}`;
+  assistant messages include `tool_calls` array; tool results include
+  `tool_call_id`.
+- **Gemini:** `_convert_tools()` produces `FunctionDeclaration` objects;
+  assistant tool calls → `function_call` parts; tool results →
+  `function_response` parts with the correct function name resolved via
+  `_resolve_tool_name()`.
 
-**Target:** `agenticapi init my-agent && cd my-agent && agenticapi dev
---app app:app` produces a working agent endpoint in under 5 minutes —
-with tools, harness, and eval pre-wired.
+`LLMMessage` now carries `tool_call_id` and `tool_calls` fields for
+multi-turn conversation fidelity. Integration tests against all three
+real provider APIs verify end-to-end tool calling.
 
-### Sequencing
+### Element 5: Agent Trace Inspector (SHIPPED)
 
+A self-hosted **trace inspection UI** at `/_trace` with search, diff,
+cost analytics, and compliance export. No external dependencies.
+
+Enabled via `AgenticApp(trace_url="/_trace")`.
+Backend: 6 JSON API routes (search, detail, diff, stats, export, UI).
+Features: filter by endpoint / status / tool / date / cost; side-by-side
+trace diff; per-endpoint and per-tool cost breakdown; downloadable JSON
+compliance report. All user-controlled data is HTML-escaped to prevent XSS.
+
+### Element 6: Harness-Governed MCP Tool Server (SHIPPED)
+
+`HarnessMCPServer` exposes registered `@tool` functions as MCP tools
+with full harness governance. Every tool call from an external AI
+assistant (Claude Code, Cursor, etc.) goes through the harness pipeline:
+policy evaluation → tool execution → audit recording.
+
+```python
+from agenticapi.mcp_tools import HarnessMCPServer
+mcp = HarnessMCPServer(app, path="/mcp/tools")
 ```
-Element 1: Native function calling   [~2 weeks]  — unblocks production
-    ↓
-Element 2: Multi-agent mesh (remote) [~2 weeks]  — unblocks enterprise
-    ↓
-Element 3: More init templates       [~1 week]   — accelerates adoption
-```
+
+This positions AgenticAPI as the **harness layer for AI tool access** —
+not just for its own agents, but for every AI assistant that speaks MCP.
+
+### Next Priorities
+
+With Elements 1–6 shipped, the next priorities are:
+
+1. **HttpTransport for distributed mesh** — enable `MeshContext.call()`
+   across HTTP services with budget and trace propagation.
+2. **Hardened trust model** — gVisor sandbox, secret substitution,
+   code attestation (`VISION.md` Track 2).
 
 ---
 

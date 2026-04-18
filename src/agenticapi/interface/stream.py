@@ -141,6 +141,23 @@ class ToolCallCompletedEvent(AgentEvent):
     duration_ms: float | None = None
 
 
+class ToolResultEvent(AgentEvent):
+    """Emitted when a tool call completes within the agentic loop.
+
+    Carries the tool name, the result value, timing, and the
+    loop iteration number. Distinct from :class:`ToolCallCompletedEvent`
+    which is a lighter-weight "done" signal — this event includes the
+    full result payload for streaming consumers that want to render
+    intermediate tool outputs.
+    """
+
+    kind: str = "tool_result"
+    tool_name: str
+    result: Any = None
+    duration_ms: float = 0.0
+    iteration: int = 0
+
+
 class PartialResultEvent(AgentEvent):
     """A partial output the client should append to the in-progress result.
 
@@ -237,6 +254,32 @@ class AutonomyChangedEvent(AgentEvent):
     current: str
     reason: str
     signal: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowStepStartEvent(AgentEvent):
+    """Emitted when a workflow step begins execution."""
+
+    kind: str = "workflow_step_start"
+    step_name: str
+    iteration: int = 0
+
+
+class WorkflowStepCompleteEvent(AgentEvent):
+    """Emitted when a workflow step finishes execution."""
+
+    kind: str = "workflow_step_complete"
+    step_name: str
+    next_step: str | list[str] | None = None
+    duration_ms: float = 0.0
+
+
+class WorkflowCheckpointEvent(AgentEvent):
+    """Emitted when a workflow pauses at a checkpoint."""
+
+    kind: str = "workflow_checkpoint"
+    step_name: str
+    workflow_id: str = ""
+    message: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -364,6 +407,42 @@ class AgentStream:
                 duration_ms=duration_ms,
             )
         )
+
+    async def emit_tool_result(
+        self,
+        *,
+        tool_name: str,
+        result: Any = None,
+        duration_ms: float = 0.0,
+        iteration: int = 0,
+    ) -> None:
+        """Emit a tool result event from the agentic loop."""
+        await self._emit(
+            ToolResultEvent(
+                tool_name=tool_name,
+                result=result,
+                duration_ms=duration_ms,
+                iteration=iteration,
+            )
+        )
+
+    async def emit_workflow_step_start(self, *, step_name: str, iteration: int = 0) -> None:
+        """Emit a workflow step start event."""
+        await self._emit(WorkflowStepStartEvent(step_name=step_name, iteration=iteration))
+
+    async def emit_workflow_step_complete(
+        self,
+        *,
+        step_name: str,
+        next_step: str | list[str] | None = None,
+        duration_ms: float = 0.0,
+    ) -> None:
+        """Emit a workflow step completion event."""
+        await self._emit(WorkflowStepCompleteEvent(step_name=step_name, next_step=next_step, duration_ms=duration_ms))
+
+    async def emit_workflow_checkpoint(self, *, step_name: str, workflow_id: str = "", message: str = "") -> None:
+        """Emit a workflow checkpoint event."""
+        await self._emit(WorkflowCheckpointEvent(step_name=step_name, workflow_id=workflow_id, message=message))
 
     async def emit_partial(self, chunk: Any, *, is_last: bool = False) -> None:
         """Emit a partial result chunk to be appended on the client side."""
